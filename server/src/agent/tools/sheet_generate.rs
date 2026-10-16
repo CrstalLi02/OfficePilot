@@ -87,7 +87,7 @@ impl OfficeTool for SheetGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成结构化表格：根据用户需求生成数据表格（可含多个 sheet），支持数据分析、排期、预算等，可导出为 Excel (.xlsx)。"
+        "生成结构化表格（可含多个 sheet），可导出 Excel (.xlsx)：预算、排期、清单、台账、数据明细等需要行列数据的场景。只想直观看趋势、对比、占比时用 chart_generate。"
     }
 
     fn parameters(&self) -> serde_json::Value {

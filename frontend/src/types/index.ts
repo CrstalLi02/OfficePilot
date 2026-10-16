@@ -136,6 +136,8 @@ export interface PersistedSession {
     created_at?: string;
   }>;
   artifacts?: Artifact[];
+  /** 等待确认的计划（Plan 模式） */
+  pending_plan?: { run_id: string; plan: AgentPlan } | null;
   project_id?: string;
   tool_kind?: ToolKind;
   title: string;
@@ -207,10 +209,49 @@ export interface PPTProject {
 }
 
 // ===== 对话消息 =====
+// ===== 工作模式与计划确认 =====
+/** craft：直接执行；plan：先确认计划再执行；ask：只问答，不生成产物 */
+export type AgentMode = 'craft' | 'plan' | 'ask';
+
+export interface PlanStep {
+  id: string;
+  tool: string;
+  purpose: string;
+  deliverable?: string;
+}
+
+export interface AgentPlan {
+  goal: string;
+  steps: PlanStep[];
+  notes?: string;
+}
+
+export type PlanDecisionKind = 'approve' | 'revise' | 'reject';
+
+export interface PlanDecisionPayload {
+  run_id: string;
+  decision: PlanDecisionKind;
+  steps?: PlanStep[];
+  feedback?: string;
+}
+
+/** 挂在助手消息上的计划卡片状态 */
+export interface PlanCardState {
+  runId: string;
+  plan: AgentPlan;
+  status: 'pending' | 'approved' | 'revised' | 'rejected';
+  /** 执行进度：步骤 id → 成功/失败 */
+  stepStatus?: Record<string, 'done' | 'error'>;
+  /** 确认时保留的步骤 id（未勾选的步骤不执行） */
+  approvedStepIds?: string[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  /** Plan 模式下模型提交的计划 */
+  plan?: PlanCardState;
   action?: string;
   slide_id?: string;
   attachments?: ChatAttachment[];

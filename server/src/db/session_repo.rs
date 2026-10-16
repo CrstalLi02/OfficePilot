@@ -32,6 +32,8 @@ pub struct SessionDetail {
     pub updated_at: String,
     pub messages: Vec<PersistedChatMessage>,
     pub artifacts: Vec<Artifact>,
+    /// Plan 模式下等待用户确认的计划
+    pub pending_plan: Option<super::agent_run_repo::PendingPlan>,
 }
 
 pub async fn create(
@@ -274,6 +276,12 @@ pub async fn get_session_detail(pool: &DbPool, session_id: &str) -> AppResult<Op
     };
     let messages = get_persisted_messages(pool, session_id, 100).await?;
     let artifacts = get_artifacts(pool, session_id).await?;
+    let pending_plan = super::agent_run_repo::pending_for_session(pool, session_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("[Session] 读取待确认计划失败: {e:?}");
+            None
+        });
     Ok(Some(SessionDetail {
         id: session.id,
         owner_id: session.owner_id,
@@ -287,6 +295,7 @@ pub async fn get_session_detail(pool: &DbPool, session_id: &str) -> AppResult<Op
         updated_at: session.updated_at,
         messages,
         artifacts,
+        pending_plan,
     }))
 }
 

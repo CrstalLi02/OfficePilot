@@ -110,7 +110,7 @@ impl OfficeTool for DocGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成结构化文档：根据用户需求生成可编辑文档，支持报告、计划、总结、文章、PRD 等类型，可导出为 Word (.docx)。"
+        "生成正式的 Word 文档（报告、方案、计划、总结、文章、PRD），可导出 .docx。适合需要正式排版、对外交付或打印的文档；知识沉淀、README、会议纪要、笔记、提示词草稿等以 md_generate 为主。"
     }
 
     fn parameters(&self) -> serde_json::Value {

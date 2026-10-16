@@ -80,7 +80,7 @@ impl OfficeTool for VideoBatchGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "批量视频生成：读取分镜方案 artifact，逐镜头调用 Agnes V2.5 生成视频。每个镜头独立生成，完成后返回多个视频 artifact。支持链式一致性——上一镜头视频 URL 自动作为下一镜头的参考素材。"
+        "批量视频生成：读取 video_storyboard 产出的分镜方案，逐镜头调用 Agnes V2.5 生成视频，返回多个视频产物；上一镜头的视频会自动作为下一镜头的参考，保持画面连贯。在 video_storyboard 之后使用。"
     }
 
     fn is_read_only(&self) -> bool {

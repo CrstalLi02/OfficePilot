@@ -87,7 +87,7 @@ impl OfficeTool for MarkdownGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成 Markdown 文档：适合知识库、README、说明文档、会议纪要、调研整理、操作手册等纯文本结构化内容，可在右侧直接渲染并下载 .md 文件。"
+        "生成 Markdown 文档：知识库文章、README、说明或操作手册、会议纪要、调研笔记，以及提示词、脚本、方案草稿等以文字为主的内容，可在右侧预览并下载 .md。用户说“先写/先构思/先出方案/写提示词/写脚本”时用它交付文字。"
     }
 
     fn parameters(&self) -> serde_json::Value {

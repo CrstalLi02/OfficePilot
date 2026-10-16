@@ -514,7 +514,7 @@ impl OfficeTool for VideoGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成视频结果：基于 Agnes Video V2.5 创建视频任务并返回可直接预览的 mp4 视频链接。支持三种模式：text（文生视频）、keyframe（首尾帧控制）、reference（多模态参考）。系统根据图片数量自动选择最优模式：0图→text，1-2图→keyframe，3+图→reference。支持从会话历史产物中自动提取图片。"
+        "生成视频成片：基于 Agnes Video V2.5 返回可预览的 mp4 链接。只在用户明确要视频成品时调用（生成视频、短片、宣传片、动画、让图片动起来）；只要脚本、分镜文字或提示词时不要调用。支持三种模式：text（文生视频）、keyframe（首尾帧控制）、reference（多模态参考），系统按图片数量自动选择：0 张→text，1-2 张→keyframe，3 张及以上→reference；会自动从会话历史产物中提取用户引用的图片。"
     }
 
     fn parameters(&self) -> serde_json::Value {

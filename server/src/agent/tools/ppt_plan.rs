@@ -83,7 +83,7 @@ impl OfficeTool for PptPlanTool {
     }
 
     fn description(&self) -> &str {
-        "规划 PPT 大纲：根据用户需求生成 PPT 的页面规划（标题、布局、要点）。这是 PPT 生成的第一步，只产出规划，不生成最终幻灯片。"
+        "PPT 第一步：规划每页的标题、布局和要点。用户要 PPT、幻灯片、演示文稿、汇报材料、培训课件时先调用它，再调用 ppt_generate；它只产出规划，不产出最终幻灯片。"
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -103,9 +103,6 @@ impl OfficeTool for PptPlanTool {
         })
     }
 
-    fn is_read_only(&self) -> bool {
-        true
-    }
 
     fn produces_artifact(&self) -> bool {
         false

@@ -7,6 +7,7 @@ pub mod local_video;
 pub mod md_generate;
 pub mod ppt_generate;
 pub mod ppt_plan;
+pub mod propose_plan;
 pub mod sheet_generate;
 pub mod video_batch_generate;
 pub mod video_generate;
@@ -49,6 +50,7 @@ pub async fn register_all_tools() {
         .register(Arc::new(video_storyboard::VideoStoryboardTool))
         .await;
     REGISTRY.register(Arc::new(web_search_generic::WebSearchTool)).await;
+    REGISTRY.register(Arc::new(propose_plan::ProposePlanTool)).await;
 
     let tools = REGISTRY.list().await;
     tracing::info!(

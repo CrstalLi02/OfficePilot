@@ -118,8 +118,9 @@ pub struct PersistedChatMessage {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatRequest {
+    #[serde(default)]
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
@@ -135,6 +136,12 @@ pub struct ChatRequest {
     pub attachments: Option<Vec<ChatAttachment>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_config: Option<serde_json::Value>,
+    /// 工作模式：craft（默认，直接执行）/ plan（先确认计划）/ ask（只问答）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<crate::agent::plan::AgentMode>,
+    /// 对 Plan 模式下待确认计划的决定；带上它表示恢复那次运行
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<crate::agent::plan::PlanDecision>,
 }
 
 // ── Slide / PPT ──

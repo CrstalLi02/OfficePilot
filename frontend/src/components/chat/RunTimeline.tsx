@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, Ban, Check, Clapperboard, FileEdit, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Sheet, Wrench } from 'lucide-react'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
 
-const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> = {
+export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> = {
   ppt_plan: { label: '规划 PPT 大纲', icon: LayoutDashboard },
   ppt_generate: { label: '生成 PPT', icon: LayoutDashboard },
   doc_generate: { label: '生成 Word 文档', icon: FileEdit },

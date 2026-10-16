@@ -13,6 +13,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::agent_loop::{build_initial_request, InitialRequest};
+use crate::agent::plan::AgentMode;
 use crate::agent::AgentConfig;
 use crate::llm::LlmClient;
 use crate::models::{ChatAttachment, ChatMessage, ChatRequest};
@@ -95,6 +96,7 @@ struct Options {
     filter: Option<String>,
     out: PathBuf,
     label: Option<String>,
+    mode: AgentMode,
 }
 
 fn parse_args(args: &[String]) -> Result<Options> {
@@ -106,6 +108,7 @@ fn parse_args(args: &[String]) -> Result<Options> {
         filter: None,
         out: PathBuf::from("evals/reports"),
         label: None,
+        mode: AgentMode::Craft,
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -122,10 +125,15 @@ fn parse_args(args: &[String]) -> Result<Options> {
             "--filter" => opts.filter = Some(value()?),
             "--out" => opts.out = PathBuf::from(value()?),
             "--label" => opts.label = Some(value()?),
+            "--mode" => {
+                opts.mode = serde_json::from_value(serde_json::Value::String(value()?))
+                    .context("--mode 只能是 craft / plan / ask")?
+            }
             "-h" | "--help" => {
                 println!(
                     "用法: walioffice eval [--cases evals/routing.jsonl] [--model NAME] [--repeat N]\n\
                      \x20                     [--concurrency N] [--filter TEXT] [--out evals/reports] [--label TEXT]\n\
+                     \x20                     [--mode craft|plan|ask]\n\
                      模型地址与 key 读取 .env 中的 LLM 配置；--model 覆盖模型名。"
                 );
                 std::process::exit(0);
@@ -216,6 +224,7 @@ fn judge(case: &EvalCase, tools: &BTreeSet<String>) -> (bool, String) {
 async fn run_attempt(
     case: &EvalCase,
     rep: usize,
+    mode: AgentMode,
     client: &LlmClient,
 ) -> (Vec<String>, Attempt) {
     let session_id = format!("eval-{}-{rep}", case.id);
@@ -230,45 +239,31 @@ async fn run_attempt(
         })
         .collect();
 
-    // 按线上顺序回放历史用户消息，让有会话状态的路由逻辑看到相同的上下文
-    for msg in history.iter().filter(|m| m.role == "user") {
-        let _ = resolve_routing(&ChatRequest {
-            message: msg.content.clone(),
-            project_id: None,
-            session_id: Some(session_id.clone()),
-            theme: None,
-            tool_kind: None,
-            model: None,
-            attachments: None,
-            tool_config: None,
-        });
-    }
-
     let attachments = to_attachments(case);
     let req = ChatRequest {
         message: case.message.clone(),
-        project_id: None,
         session_id: Some(session_id),
-        theme: None,
         tool_kind: case.tool_kind.clone(),
-        model: None,
         attachments: (!attachments.is_empty()).then(|| attachments.clone()),
-        tool_config: None,
+        mode: Some(mode),
+        ..Default::default()
     };
     let Routing {
         system_prompt,
         allowed_tools,
+        mode,
         ..
     } = resolve_routing(&req);
     let config = AgentConfig {
         max_turns: 1,
         system_prompt,
         allowed_tools,
+        mode,
     };
     let InitialRequest {
         conversation,
         function_defs,
-    } = build_initial_request(history, &build_user_message(&req), &attachments, &config, client)
+    } = build_initial_request(history, &build_user_message(&req), &config, client)
         .await;
     let exposed: Vec<String> = function_defs.iter().map(|d| d.function.name.clone()).collect();
 
@@ -321,6 +316,7 @@ fn percentile(sorted: &[u128], p: f64) -> u128 {
 fn render_markdown(
     reports: &[CaseReport],
     model: &str,
+    mode: AgentMode,
     label: &str,
     repeat: usize,
     started_at: &str,
@@ -343,7 +339,8 @@ fn render_markdown(
     let mut out = String::new();
     out.push_str(&format!("# 路由评测报告 · {label}\n\n"));
     out.push_str(&format!(
-        "- 时间：{started_at}\n- 模型：`{model}`\n- 用例：{} 条 × {repeat} 次\n\n",
+        "- 时间：{started_at}\n- 模型：`{model}`\n- 模式：{}\n- 用例：{} 条 × {repeat} 次\n\n",
+        mode.as_str(),
         reports.len()
     ));
     out.push_str("| 指标 | 值 |\n|---|---|\n");
@@ -412,14 +409,16 @@ pub async fn run(args: &[String]) -> Result<()> {
     let client = Arc::new(client);
     let model = client.model().to_string();
     println!(
-        "▶ 评测 {} 条用例 × {} 次，模型 {} @ {}",
+        "▶ 评测 {} 条用例 × {} 次，{} 模式，模型 {} @ {}",
         cases.len(),
         opts.repeat,
+        opts.mode.as_str(),
         model,
         client.base_url()
     );
 
     let started_at = chrono::Local::now();
+    let mode = opts.mode;
     let jobs = cases
         .iter()
         .enumerate()
@@ -429,7 +428,7 @@ pub async fn run(args: &[String]) -> Result<()> {
             let client = client.clone();
             let case = &cases[ci];
             async move {
-                let (exposed, attempt) = run_attempt(case, rep, &client).await;
+                let (exposed, attempt) = run_attempt(case, rep, mode, &client).await;
                 println!(
                     "  {} {:<28} {}",
                     if attempt.passed { "✓" } else { "✗" },
@@ -462,6 +461,7 @@ pub async fn run(args: &[String]) -> Result<()> {
     let markdown = render_markdown(
         &reports,
         &model,
+        mode,
         &label,
         opts.repeat,
         &started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -474,9 +474,10 @@ pub async fn run(args: &[String]) -> Result<()> {
             .collect::<String>()
     };
     let stem = format!(
-        "{}-{}{}",
+        "{}-{}-{}{}",
         started_at.format("%Y%m%d-%H%M%S"),
         slug(&model),
+        mode.as_str(),
         opts.label.as_deref().map(|l| format!("-{}", slug(l))).unwrap_or_default()
     );
     let md_path = opts.out.join(format!("{stem}.md"));

@@ -69,7 +69,7 @@ impl OfficeTool for DrawioGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成 draw.io 可编辑图表：支持流程图、架构图、泳道图、拓扑图、ER图等，输出 draw.io XML 格式。"
+        "生成可继续编辑的 draw.io 图：流程图、架构图、泳道图、拓扑图、ER 图、思维导图。用户要“画”的是流程、结构或关系时用它，不要用 image_prompt 出图。"
     }
 
     fn parameters(&self) -> serde_json::Value {

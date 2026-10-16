@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth-store';
-import type { TokenResponse, ToolKind, Artifact, PersistedSession, AppSettings, MCPServiceConfig, ChatAttachment } from '@/types';
+import type { TokenResponse, ToolKind, Artifact, PersistedSession, AppSettings, MCPServiceConfig, ChatAttachment, AgentMode, PlanDecisionPayload } from '@/types';
 
 const API_BASE = '/api';
 
@@ -162,7 +162,8 @@ export const chatApi = {
     onEvent: (event: string, data: any) => void,
     token: string,
     signal?: AbortSignal,
-    toolConfig?: Record<string, any>
+    toolConfig?: Record<string, any>,
+    options?: { mode?: AgentMode; resume?: PlanDecisionPayload }
   ) => {
     const response = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
@@ -179,6 +180,8 @@ export const chatApi = {
         model,
         attachments,
         tool_config: toolConfig,
+        mode: options?.mode,
+        resume: options?.resume,
       }),
       signal,
     });

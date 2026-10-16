@@ -396,7 +396,7 @@ impl OfficeTool for PptGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成完整 PPT 项目：根据主题和大纲生成幻灯片（含视觉设计），写入项目文件。需要先调用 ppt_plan 规划大纲。"
+        "PPT 第二步：根据 ppt_plan 的规划生成完整幻灯片（含视觉设计），可导出 .pptx。必须在 ppt_plan 之后调用。"
     }
 
     fn parameters(&self) -> serde_json::Value {

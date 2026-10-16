@@ -5,10 +5,11 @@ import { AlertCircle, Check, Circle, Download, Eye, Files, Loader2, Send, Sparkl
 import { AGENT_TOOLS, getAgentTool } from '@/config/agent-tools'
 import { useRef, useState, useEffect, Fragment, useMemo } from 'react'
 import { FilePickerPanel } from './FilePickerPanel'
-import type { AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PPTProject, ToolKind, ToolConfigMap } from '@/types'
+import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, ToolKind, ToolConfigMap } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 import { ToolConfigDropdown } from './ToolConfigDropdown'
 import { RunTimeline } from './RunTimeline'
+import { PlanCard } from './PlanCard'
 import type { AgentRunState } from '@/lib/agent-run'
 
 interface ChatPanelProps {
@@ -21,6 +22,11 @@ interface ChatPanelProps {
   traceEvents: AgentTraceEvent[]
   /** 本轮工具调用状态（并行卡片） */
   runState: AgentRunState
+  /** 工作模式：Craft 直接执行 / Plan 先确认计划 / Ask 只问答 */
+  mode: AgentMode
+  onModeChange: (mode: AgentMode) => void
+  /** 对某条消息上的计划做出决定 */
+  onPlanDecision: (messageIndex: number, decision: PlanDecisionKind, steps: PlanStep[], feedback: string) => void
   selectedTheme: string
   activeTool: ToolKind
   projects: PPTProject[]
@@ -51,6 +57,12 @@ interface ChatPanelProps {
   historyArtifacts?: { artifact: Artifact; sessionTitle: string; sessionId: string }[]
   messagesEndRef: React.RefObject<HTMLDivElement>
 }
+
+const MODE_OPTIONS: Array<{ id: AgentMode; label: string; hint: string }> = [
+  { id: 'craft', label: '执行', hint: 'Craft：直接调用工具生成产物' },
+  { id: 'plan', label: '规划', hint: 'Plan：先列出执行计划，你确认后再执行' },
+  { id: 'ask', label: '问答', hint: 'Ask：只回答问题，不生成文件' },
+]
 
 function renderMarkdown(content: string) {
   const normalized = content
@@ -299,6 +311,9 @@ export function ChatPanel({
   processLogs,
   traceEvents,
   runState,
+  mode,
+  onModeChange,
+  onPlanDecision,
   selectedTheme,
   activeTool,
   projects,
@@ -665,6 +680,14 @@ export function ChatPanel({
                     {streamStatus || '正在处理...'}
                   </span>
                 ) : '')}
+                {msg.role === 'assistant' && msg.plan && (
+                  <PlanCard
+                    key={msg.plan.runId}
+                    state={msg.plan}
+                    busy={isStreaming}
+                    onDecide={(decision, steps, feedback) => onPlanDecision(i, decision, steps, feedback)}
+                  />
+                )}
                 {msg.inputRefs && msg.inputRefs.length > 0 && (
                   <div className={`mt-2 flex flex-wrap gap-1.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {msg.inputRefs.map((refItem) => {
@@ -1070,6 +1093,28 @@ export function ChatPanel({
             </div>
             <div className="mt-1.5 rounded-[1.2rem] border border-black/[0.05] bg-[#f8f5ee]/86 px-2 py-1.5 backdrop-blur-sm">
               <div className="flex items-center gap-1">
+                <div
+                  role="radiogroup"
+                  aria-label="工作模式"
+                  className="mr-1 inline-flex shrink-0 items-center rounded-full border border-black/[0.06] bg-white/70 p-[2px]"
+                >
+                  {MODE_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={mode === option.id}
+                      onClick={() => onModeChange(option.id)}
+                      disabled={isStreaming}
+                      title={option.hint}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all disabled:opacity-50 ${
+                        mode === option.id ? 'bg-surface-950 text-white shadow-sm' : 'text-surface-500 hover:text-surface-900'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex-wrap">
                   {AGENT_TOOLS.map((item) => (
                     <button
