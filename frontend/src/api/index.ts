@@ -147,6 +147,12 @@ export const notificationApi = {
   delete: (id: string) => api.delete(`/notifications/${id}`),
 };
 
+// ===== 工作区操作 API =====
+export const workspaceApi = {
+  /** 撤销 Agent 的一次写入 / 整理 */
+  undo: (opId: string) => api.post<{ undone: number; skipped: string[] }>(`/workspace/ops/${opId}/undo`),
+};
+
 // ===== 产物版本 API =====
 export interface ArtifactVersionMeta {
   version: number;
@@ -184,7 +190,7 @@ export const chatApi = {
     token: string,
     signal?: AbortSignal,
     toolConfig?: Record<string, any>,
-    options?: { mode?: AgentMode; resume?: PlanDecisionPayload }
+    options?: { mode?: AgentMode; resume?: PlanDecisionPayload; fileRefs?: string[] }
   ) => {
     const response = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
@@ -203,6 +209,7 @@ export const chatApi = {
         tool_config: toolConfig,
         mode: options?.mode,
         resume: options?.resume,
+        file_refs: options?.fileRefs?.length ? options.fileRefs : undefined,
       }),
       signal,
     });

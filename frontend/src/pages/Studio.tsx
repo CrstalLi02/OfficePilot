@@ -11,7 +11,7 @@ import { ConversationSidebar } from '@/components/history/ConversationSidebar'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu } from 'lucide-react'
-import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, ToolKind, ToolConfigMap } from '@/types'
+import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
 import { contentFingerprint } from '@/lib/artifact-diff'
@@ -1033,6 +1033,27 @@ export default function Studio() {
     setAttachments((current) => current.filter((item) => item.id !== id))
   }
 
+  /** @ 引用工作区文件：插入文件标签，发送时作为 file_refs 交给 Agent 读取 */
+  const handleInsertFileRef = (file: WorkspaceFile) => {
+    if (isStreaming) return
+    const kindByType: Record<string, InputRef['kind']> = { doc: 'document', excel: 'sheet', ppt: 'ppt', drawio: 'drawio', image: 'image', video: 'video' }
+    setInputRefs((current) =>
+      current.some((ref) => ref.fileId === file.id)
+        ? current
+        : [
+            ...current,
+            {
+              id: `file-${file.id}`,
+              artifactId: '',
+              kind: kindByType[file.file_type] || 'mixed',
+              title: file.name,
+              refText: `[文件：${file.name}]`,
+              fileId: file.id,
+            },
+          ]
+    )
+  }
+
   const handleInsertArtifactToInput = (artifact: Artifact, fromSessionId?: string) => {
     if (isStreaming) return
 
@@ -1253,6 +1274,7 @@ export default function Studio() {
       ? (baseMessage.trim() ? `${baseMessage}\n\n${refsText}${refContext}` : `${refsText}${refContext}`)
       : baseMessage
     const pendingAttachments = override ? [] : attachments
+    const fileRefs = override ? [] : inputRefs.flatMap((ref) => (ref.fileId ? [ref.fileId] : []))
     const inferredTool = override ? activeTool : inferToolFromMessage(message, pendingAttachments)
     if (inferredTool !== activeTool) setActiveTool(inferredTool)
     if (!override) {
@@ -1583,7 +1605,7 @@ export default function Studio() {
         token,
         abortController.signal,
         toolConfig,
-        { mode: agentMode, resume: override?.resume }
+        { mode: agentMode, resume: override?.resume, fileRefs }
       )
     } catch (err) {
       console.error('Chat error:', err)
@@ -2124,6 +2146,7 @@ export default function Studio() {
                 onOpenArtifact={handleOpenArtifact}
                 onExportArtifact={handleExportArtifact}
                 onInsertArtifact={handleInsertArtifactToInput}
+                onInsertFileRef={handleInsertFileRef}
                 messagesEndRef={messagesEndRef}
               />
             )}

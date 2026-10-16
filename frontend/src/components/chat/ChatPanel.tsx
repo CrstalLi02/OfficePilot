@@ -5,7 +5,7 @@ import { AlertCircle, Check, Circle, Download, Eye, Files, Loader2, Send, Sparkl
 import { AGENT_TOOLS, getAgentTool } from '@/config/agent-tools'
 import { useRef, useState, useEffect, Fragment, useMemo } from 'react'
 import { FilePickerPanel } from './FilePickerPanel'
-import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, ToolKind, ToolConfigMap } from '@/types'
+import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 import { ToolConfigDropdown } from './ToolConfigDropdown'
 import { RunTimeline } from './RunTimeline'
@@ -53,6 +53,8 @@ interface ChatPanelProps {
   onOpenArtifact: (artifactId: string) => void
   onExportArtifact: (artifact: Artifact) => void
   onInsertArtifact: (artifact: Artifact, sessionId?: string) => void
+  /** @ 引用工作区文件 */
+  onInsertFileRef?: (file: WorkspaceFile) => void
   /** 历史会话产物列表（用于 @ 引用历史产物） */
   historyArtifacts?: { artifact: Artifact; sessionTitle: string; sessionId: string }[]
   messagesEndRef: React.RefObject<HTMLDivElement>
@@ -341,6 +343,7 @@ export function ChatPanel({
   onOpenArtifact,
   onExportArtifact,
   onInsertArtifact,
+  onInsertFileRef,
   messagesEndRef,
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -418,6 +421,12 @@ export function ChatPanel({
     window.setTimeout(() => textareaRef.current?.focus(), 50)
   }
 
+  const handleFilePickerSelectFile = (file: WorkspaceFile) => {
+    setShowFilePicker(false)
+    onInsertFileRef?.(file)
+    window.setTimeout(() => textareaRef.current?.focus(), 50)
+  }
+
   const compactStreamStatus = summarizeStreamStatus(streamStatus)
   const elapsedLabel = streamStartedAt ? formatElapsed(elapsedSeconds) : '0s'
 
@@ -448,7 +457,8 @@ export function ChatPanel({
       const pos = ta.selectionStart
       const before = ta.value.slice(0, pos)
       const isAtStart = pos === 0 || /\s$/.test(before)
-      if (isAtStart && (artifacts.length > 0 || (historyArtifacts && historyArtifacts.length > 0))) {
+      // 有产物，或者可以引用工作区文件时都可以打开
+      if (isAtStart && (onInsertFileRef || artifacts.length > 0 || (historyArtifacts && historyArtifacts.length > 0))) {
         e.preventDefault()
         setArtifactPickerScope(artifacts)
         setShowFilePicker(true)
@@ -969,6 +979,7 @@ export function ChatPanel({
                   artifacts={artifactPickerScope}
                   historyArtifacts={historyArtifacts}
                   onSelect={handleFilePickerSelect}
+                  onSelectFile={onInsertFileRef ? handleFilePickerSelectFile : undefined}
                   onClose={() => setShowFilePicker(false)}
                 />
               )}

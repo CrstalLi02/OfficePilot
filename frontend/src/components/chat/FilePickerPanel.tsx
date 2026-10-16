@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
-import { FileEdit, Sheet, PenTool, Image as ImageIcon, Clapperboard, FileText, Search, Clock, MessageSquare } from 'lucide-react'
-import type { Artifact } from '@/types'
+import { useEffect, useRef, useState, useMemo } from 'react'
+import { FileEdit, Sheet, PenTool, Image as ImageIcon, Clapperboard, FileText, Search, Clock, MessageSquare, FolderOpen, Loader2 } from 'lucide-react'
+import { fileApi } from '@/api'
+import type { Artifact, WorkspaceFile } from '@/types'
 
 export interface FilePickerProps {
   /** 当前会话产物 */
   artifacts: Artifact[]
   /** 历史会话产物（从其他会话加载的） */
   historyArtifacts?: HistoryArtifactItem[]
-  /** 选择回调 */
+  /** 选择产物回调 */
   onSelect: (artifact: Artifact, sessionId?: string) => void
+  /** 选择工作区文件回调；不传则不显示"文件"标签 */
+  onSelectFile?: (file: WorkspaceFile) => void
   onClose: () => void
 }
 
@@ -46,80 +49,107 @@ const KIND_LABEL: Record<string, string> = {
   search: '搜索',
 }
 
-type PickerTab = 'current' | 'history'
+/** 文件类型（files.file_type）对应的图标与标签 */
+const FILE_TYPE: Record<string, { icon: typeof FileEdit; label: string }> = {
+  doc: { icon: FileText, label: '文档' },
+  excel: { icon: Sheet, label: '表格' },
+  ppt: { icon: FileEdit, label: 'PPT' },
+  drawio: { icon: PenTool, label: '图表' },
+  image: { icon: ImageIcon, label: '图片' },
+  video: { icon: Clapperboard, label: '视频' },
+}
 
-export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onClose }: FilePickerProps) {
+type PickerTab = 'current' | 'history' | 'files'
+
+interface PickerItem {
+  key: string
+  title: string
+  label: string
+  icon: typeof FileEdit
+  pick: () => void
+}
+
+interface PickerGroup {
+  name: string
+  items: PickerItem[]
+}
+
+function matches(query: string, ...fields: Array<string | undefined>) {
+  const q = query.trim().toLowerCase()
+  return !q || fields.some((f) => f?.toLowerCase().includes(q))
+}
+
+export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelectFile, onClose }: FilePickerProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<PickerTab>('current')
+  const [files, setFiles] = useState<WorkspaceFile[] | null>(onSelectFile ? null : [])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const history = useMemo(() => historyArtifacts || [], [historyArtifacts])
 
-  // 当前会话没有产物但历史有 → 自动切到历史 tab
+  // 工作区文件按需加载（只在打开时加载一次）
+  const wantsFiles = Boolean(onSelectFile)
   useEffect(() => {
-    if (artifacts.length === 0 && historyArtifacts && historyArtifacts.length > 0) {
-      setActiveTab('history')
+    if (!wantsFiles) return
+    let cancelled = false
+    fileApi
+      .search('')
+      .then(({ data }) => !cancelled && setFiles(Array.isArray(data?.files) ? data.files : []))
+      .catch(() => !cancelled && setFiles([]))
+    return () => {
+      cancelled = true
     }
-  }, [artifacts.length, historyArtifacts])
+  }, [wantsFiles])
 
-  const currentList = useMemo(() => artifacts, [artifacts])
+  const tabs = useMemo(() => {
+    const list: Array<{ id: PickerTab; label: string; icon: typeof FileEdit; count: number | null }> = []
+    if (artifacts.length > 0) list.push({ id: 'current', label: '当前会话', icon: MessageSquare, count: artifacts.length })
+    if (history.length > 0) list.push({ id: 'history', label: '历史会话', icon: Clock, count: history.length })
+    if (onSelectFile) list.push({ id: 'files', label: '文件', icon: FolderOpen, count: files ? files.length : null })
+    return list
+  }, [artifacts.length, history.length, onSelectFile, files])
 
-  const historyList = useMemo(() => historyArtifacts || [], [historyArtifacts])
+  // 当前标签没有内容时切到第一个有内容的标签
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab) && tabs.length > 0) setActiveTab(tabs[0].id)
+  }, [tabs, activeTab])
 
-  // 按类型分组 - 当前列表
-  const currentGrouped = useMemo(() => {
-    const filtered = currentList.filter((a) => {
-      if (!query.trim()) return true
-      const q = query.toLowerCase()
-      return a.title?.toLowerCase().includes(q) || a.kind?.toLowerCase().includes(q)
-    })
-    const groups: Record<string, Artifact[]> = {}
-    for (const a of filtered) {
-      const key = a.kind || 'mixed'
-      if (!groups[key]) groups[key] = []
-      groups[key].push(a)
-    }
-    return groups
-  }, [currentList, query])
-
-  // 历史列表分组
-  const historyGrouped = useMemo(() => {
-    const filtered = historyList.filter((item) => {
-      if (!query.trim()) return true
-      const q = query.toLowerCase()
-      return item.artifact.title?.toLowerCase().includes(q) || item.artifact.kind?.toLowerCase().includes(q) || item.sessionTitle?.toLowerCase().includes(q)
-    })
-    // 按 sessionTitle 分组
-    const groups: Record<string, HistoryArtifactItem[]> = {}
-    for (const item of filtered) {
-      const key = item.sessionTitle || '未命名会话'
-      if (!groups[key]) groups[key] = []
-      groups[key].push(item)
-    }
-    return groups
-  }, [historyList, query])
-
-  // 扁平化列表用于键盘导航
-  const flatList = useMemo(() => {
+  const groups: PickerGroup[] = useMemo(() => {
     if (activeTab === 'current') {
-      const arr: { artifact: Artifact; sessionId?: string }[] = []
-      for (const kind of Object.keys(currentGrouped).sort()) {
-        for (const a of currentGrouped[kind]) {
-          arr.push({ artifact: a })
-        }
+      const byKind: Record<string, PickerItem[]> = {}
+      for (const a of artifacts.filter((a) => matches(query, a.title, a.kind))) {
+        const kind = a.kind || 'mixed'
+        ;(byKind[kind] ||= []).push({ key: a.id, title: a.title || '未命名', label: KIND_LABEL[kind] || kind, icon: KIND_ICON[kind] || FileEdit, pick: () => onSelect(a) })
       }
-      return arr
-    } else {
-      const arr: { artifact: Artifact; sessionId?: string }[] = []
-      for (const sessionTitle of Object.keys(historyGrouped).sort()) {
-        for (const item of historyGrouped[sessionTitle]) {
-          arr.push({ artifact: item.artifact, sessionId: item.sessionId })
-        }
-      }
-      return arr
+      return Object.keys(byKind).sort().map((kind) => ({ name: KIND_LABEL[kind] || kind, items: byKind[kind] }))
     }
-  }, [activeTab, currentGrouped, historyGrouped])
+    if (activeTab === 'history') {
+      const bySession: Record<string, PickerItem[]> = {}
+      for (const item of history.filter((i) => matches(query, i.artifact.title, i.artifact.kind, i.sessionTitle))) {
+        const kind = item.artifact.kind || 'mixed'
+        ;(bySession[item.sessionTitle || '未命名会话'] ||= []).push({
+          key: `${item.sessionId}:${item.artifact.id}`,
+          title: item.artifact.title || '未命名',
+          label: KIND_LABEL[kind] || kind,
+          icon: KIND_ICON[kind] || FileEdit,
+          pick: () => onSelect(item.artifact, item.sessionId),
+        })
+      }
+      return Object.keys(bySession).sort().map((name) => ({ name, items: bySession[name] }))
+    }
+    const items = (files || [])
+      .filter((f) => matches(query, f.name))
+      .slice(0, 100)
+      .map((f) => {
+        const meta = FILE_TYPE[f.file_type] || { icon: FileEdit, label: '文件' }
+        return { key: f.id, title: f.name, label: meta.label, icon: meta.icon, pick: () => onSelectFile?.(f) }
+      })
+    return items.length ? [{ name: '最近修改', items }] : []
+  }, [activeTab, artifacts, history, files, query, onSelect, onSelectFile])
+
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -128,9 +158,7 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onClose
   // 点击外部关闭
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) onClose()
     }
     // 用 mousedown 且 capture 阶段，确保在 click 之前拦截
     document.addEventListener('mousedown', handleMouseDown, true)
@@ -145,26 +173,22 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onClose
         onClose()
       } else if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedIndex((i) => Math.min(i + 1, flatList.length - 1))
+        setSelectedIndex((i) => Math.min(i + 1, flat.length - 1))
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
         setSelectedIndex((i) => Math.max(i - 1, 0))
       } else if (e.key === 'Enter') {
         e.preventDefault()
-        const item = flatList[selectedIndex]
-        if (item) onSelect(item.artifact, item.sessionId)
-      } else if (e.key === 'Tab') {
+        flat[selectedIndex]?.pick()
+      } else if (e.key === 'Tab' && tabs.length > 1) {
         e.preventDefault()
-        if (activeTab === 'current' && historyList.length > 0) {
-          setActiveTab('history')
-        } else if (activeTab === 'history' && currentList.length > 0) {
-          setActiveTab('current')
-        }
+        const index = tabs.findIndex((tab) => tab.id === activeTab)
+        setActiveTab(tabs[(index + 1) % tabs.length].id)
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [flatList, selectedIndex, activeTab, historyList.length, currentList.length, onClose, onSelect])
+  }, [flat, selectedIndex, tabs, activeTab, onClose])
 
   useEffect(() => {
     setSelectedIndex(0)
@@ -172,34 +196,10 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onClose
 
   // 滚动到选中项
   useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-idx="${selectedIndex}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
+    listRef.current?.querySelector(`[data-idx="${selectedIndex}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
 
-  const handleItemClick = useCallback((artifact: Artifact, sessionId?: string) => {
-    onSelect(artifact, sessionId)
-  }, [onSelect])
-
-  const hasCurrent = currentList.length > 0
-  const hasHistory = historyList.length > 0
-  const isEmpty = flatList.length === 0
-
-  if (isEmpty) {
-    return (
-      <div ref={containerRef} className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.12)]">
-        <div className="border-b border-surface-100 px-3 py-2">
-          <div className="flex items-center gap-2 text-xs text-surface-400">
-            <Search className="h-3.5 w-3.5" />
-            <span>没有可引用的产物</span>
-          </div>
-        </div>
-        <div className="px-3 py-6 text-center text-xs text-surface-300">
-          当前还没有任何可引用的产物
-        </div>
-      </div>
-    )
-  }
-
+  const loadingFiles = activeTab === 'files' && files === null
   let runningIdx = -1
 
   return (
@@ -212,108 +212,75 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onClose
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索产物…"
+            placeholder={activeTab === 'files' ? '搜索文件…' : '搜索产物…'}
             className="w-full border-0 bg-transparent p-0 text-xs text-surface-800 outline-none placeholder:text-surface-300"
           />
-          <span className="shrink-0 rounded bg-surface-50 px-1.5 py-0.5 text-[10px] font-medium text-surface-400">
-            ESC 关闭
-          </span>
+          <span className="shrink-0 rounded bg-surface-50 px-1.5 py-0.5 text-[10px] font-medium text-surface-400">ESC 关闭</span>
         </div>
-        {/* Tab 切换 */}
-        {(hasCurrent && hasHistory) && (
+        {tabs.length > 1 && (
           <div className="mt-2 flex gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('current')}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
-                activeTab === 'current' ? 'bg-primary-50 text-primary-700' : 'text-surface-400 hover:bg-surface-50'
-              }`}
-            >
-              <MessageSquare className="h-3 w-3" />
-              当前会话（{currentList.length}）
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('history')}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
-                activeTab === 'history' ? 'bg-primary-50 text-primary-700' : 'text-surface-400 hover:bg-surface-50'
-              }`}
-            >
-              <Clock className="h-3 w-3" />
-              历史会话（{historyList.length}）
-            </button>
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition ${
+                    activeTab === tab.id ? 'bg-primary-50 text-primary-700' : 'text-surface-400 hover:bg-surface-50'
+                  }`}
+                >
+                  <Icon className="h-3 w-3" />
+                  {tab.label}
+                  {tab.count !== null && `（${tab.count}）`}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
 
       {/* 列表 */}
       <div ref={listRef} className="flex-1 overflow-y-auto py-1">
-        {activeTab === 'current' ? (
-          // 当前会话产物 - 按类型分组
-          Object.keys(currentGrouped).sort().map((kind) => (
-            <div key={kind}>
-              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-surface-300">
-                {KIND_LABEL[kind] || kind}（{currentGrouped[kind].length}）
-              </div>
-              {currentGrouped[kind].map((artifact) => {
-                runningIdx++
-                const idx = runningIdx
-                const Icon = KIND_ICON[kind] || FileEdit
-                const isSelected = idx === selectedIndex
-                return (
-                  <div
-                    key={artifact.id}
-                    data-idx={idx}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                    onClick={() => handleItemClick(artifact)}
-                    className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
-                      isSelected ? 'bg-primary-50 text-primary-700' : 'text-surface-700 hover:bg-surface-50'
-                    }`}
-                  >
-                    <Icon className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-primary-500' : 'text-surface-400'}`} />
-                    <span className="truncate font-medium">{artifact.title || '未命名'}</span>
-                    <span className="ml-auto shrink-0 text-[10px] text-surface-300">
-                      {KIND_LABEL[kind]}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          ))
-        ) : (
-          // 历史会话产物 - 按会话分组
-          Object.keys(historyGrouped).sort().map((sessionTitle) => (
-            <div key={sessionTitle}>
-              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-surface-300">
-                {sessionTitle}（{historyGrouped[sessionTitle].length}）
-              </div>
-              {historyGrouped[sessionTitle].map((item) => {
-                runningIdx++
-                const idx = runningIdx
-                const kind = item.artifact.kind || 'mixed'
-                const Icon = KIND_ICON[kind] || FileEdit
-                const isSelected = idx === selectedIndex
-                return (
-                  <div
-                    key={item.artifact.id}
-                    data-idx={idx}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                    onClick={() => handleItemClick(item.artifact, item.sessionId)}
-                    className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
-                      isSelected ? 'bg-primary-50 text-primary-700' : 'text-surface-700 hover:bg-surface-50'
-                    }`}
-                  >
-                    <Icon className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-primary-500' : 'text-surface-400'}`} />
-                    <span className="truncate font-medium">{item.artifact.title || '未命名'}</span>
-                    <span className="ml-auto shrink-0 text-[10px] text-surface-300">
-                      {KIND_LABEL[kind]}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          ))
+        {loadingFiles && (
+          <div className="flex items-center gap-2 px-3 py-6 text-xs text-surface-400">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在加载文件…
+          </div>
         )}
+        {!loadingFiles && flat.length === 0 && (
+          <div className="px-3 py-6 text-center text-xs text-surface-300">
+            {tabs.length === 0 ? '当前还没有任何可引用的产物' : query ? '没有匹配的结果' : '这里还没有内容'}
+          </div>
+        )}
+        {groups.map((group) => (
+          <div key={group.name}>
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-surface-300">
+              {group.name}（{group.items.length}）
+            </div>
+            {group.items.map((item) => {
+              runningIdx++
+              const idx = runningIdx
+              const Icon = item.icon
+              const isSelected = idx === selectedIndex
+              return (
+                <div
+                  key={item.key}
+                  data-idx={idx}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  onClick={item.pick}
+                  className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                    isSelected ? 'bg-primary-50 text-primary-700' : 'text-surface-700 hover:bg-surface-50'
+                  }`}
+                >
+                  <Icon className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-primary-500' : 'text-surface-400'}`} />
+                  <span className="truncate font-medium">{item.title}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-surface-300">{item.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        ))}
       </div>
 
       {/* 底部提示 */}

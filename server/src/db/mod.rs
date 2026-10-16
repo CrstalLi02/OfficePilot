@@ -85,6 +85,9 @@ async fn run_migrations_sqlite(pool: &sqlx::SqlitePool) -> Result<()> {
     sqlx::raw_sql(include_str!("../../../migrations/003_artifact_versions.sql"))
         .execute(pool)
         .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/004_workspace.sql"))
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -110,6 +113,9 @@ async fn run_migrations_mysql(pool: &sqlx::MySqlPool) -> Result<()> {
         .execute(pool)
         .await?;
     sqlx::raw_sql(include_str!("../../../migrations/003_artifact_versions_mysql.sql"))
+        .execute(pool)
+        .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/004_workspace_mysql.sql"))
         .execute(pool)
         .await?;
     Ok(())

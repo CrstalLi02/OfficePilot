@@ -30,6 +30,18 @@ export interface InputRef {
   sessionId?: string;
   /** 产物内容摘要（发送时传给后端，让 AI 识别引用内容） */
   contentSummary?: string;
+  /** 引用的是工作区文件时的文件 id（发送时作为 file_refs 传给后端） */
+  fileId?: string;
+}
+
+/** 工作区文件（/api/files 返回） */
+export interface WorkspaceFile {
+  id: string;
+  name: string;
+  file_type: string;
+  file_size: number;
+  folder_id?: string | null;
+  updated_at: string;
 }
 
 export interface LLMProfile {

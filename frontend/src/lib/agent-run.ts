@@ -14,6 +14,10 @@ export interface ToolRun {
   durationMs?: number
   progress?: string
   error?: string
+  /** 工作区写入 / 整理的操作 id，可撤销 */
+  opId?: string
+  /** 一句话结果，如“整理了 5 项” */
+  summary?: string
 }
 
 export interface AgentRunState {
@@ -78,6 +82,8 @@ export function applyRunEvent(state: AgentRunState, event: string, data: any, no
           durationMs: typeof data.duration_ms === 'number' ? data.duration_ms : undefined,
           error: data.success ? undefined : error ? String(error).slice(0, 200) : '未返回具体错误',
           progress: undefined,
+          opId: data.success && typeof data.result?.op_id === 'string' ? data.result.op_id : undefined,
+          summary: data.success && typeof data.result?.summary === 'string' ? data.result.summary : undefined,
         })),
       }
     }
