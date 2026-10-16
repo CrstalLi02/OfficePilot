@@ -95,6 +95,31 @@ pub struct ChatCompletionRequest {
     pub temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    /// 流式时请求在最后一个 chunk 返回 token 用量
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<serde_json::Value>,
+    /// 允许模型在同一轮返回多个 tool_calls（仅在带 tools 时发送）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
+}
+
+impl ChatCompletionRequest {
+    pub fn new(
+        model: String,
+        messages: Vec<RequestMessage>,
+        tools: Option<Vec<FunctionDef>>,
+    ) -> Self {
+        Self {
+            model,
+            messages,
+            tools,
+            tool_choice: None,
+            temperature: Some(0.7),
+            stream: Some(false),
+            stream_options: None,
+            parallel_tool_calls: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,7 +139,25 @@ pub struct FunctionSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionResponse {
     pub choices: Vec<Choice>,
+    #[serde(default)]
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Usage {
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
+}
+
+impl Usage {
+    pub fn add(&mut self, other: Usage) {
+        self.prompt_tokens += other.prompt_tokens;
+        self.completion_tokens += other.completion_tokens;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,11 +190,15 @@ pub struct ToolFunction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamChunk {
+    #[serde(default)]
     pub choices: Vec<StreamChoice>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamChoice {
+    #[serde(default)]
     pub delta: StreamDelta,
     pub finish_reason: Option<String>,
 }
@@ -168,6 +215,7 @@ pub struct StreamDelta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamToolCall {
+    #[serde(default)]
     pub index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,

@@ -1,13 +1,28 @@
+use std::ops::Range;
+use std::time::{Duration, Instant};
+
+use futures::StreamExt;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::context::{compact_context, DEFAULT_CONTEXT_CONFIG};
 use super::registry::REGISTRY;
-use super::tool::{ToolContext, ToolResult};
-use crate::llm::FunctionDef;
-use crate::models::{Artifact, ChatMessage};
+use super::tool::{DynTool, ToolContext, ToolResult};
+use crate::llm::{ChatCompletionResponse, FunctionDef, LlmClient, StreamEvent, Usage};
+use crate::models::{Artifact, ChatAttachment, ChatMessage};
+
+/// 同一并发组内最多同时执行的工具数
+static MAX_PARALLEL_TOOLS: Lazy<usize> = Lazy::new(|| {
+    std::env::var("AGENT_MAX_PARALLEL_TOOLS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|n: &usize| *n > 0)
+        .unwrap_or(3)
+});
 
 // NOTE: direct_media_tool / clean_direct_topic / direct_media_input 已移除。
 // 原实现会在 allowed_tools 只有一个工具时跳过 LLM 推理直接调用工具，
@@ -18,31 +33,46 @@ use crate::models::{Artifact, ChatMessage};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AgentEvent {
-    Thinking {
-        content: String,
+    /// 模型输出的文本增量（含工具调用前的说明文字）
+    TextDelta {
+        text: String,
     },
+    /// 模型决定调用某个工具（参数可能还在生成）
+    ToolStart {
+        call_id: String,
+        tool: String,
+    },
+    /// 参数已完整，开始执行
     ToolCall {
+        call_id: String,
         tool: String,
         input: serde_json::Value,
     },
     ToolResult {
+        call_id: String,
         tool: String,
         success: bool,
         result: serde_json::Value,
         error: Option<String>,
+        duration_ms: u64,
     },
     Artifact {
         artifact: Artifact,
     },
+    /// 本次回复的完整文本（所有轮次拼接），用于持久化；增量已通过 TextDelta 推送过
     Message {
         content: String,
     },
     TurnEnd {
         turn: usize,
     },
+    Usage {
+        usage: Usage,
+    },
     Done {
         summary: String,
         artifacts: Vec<Artifact>,
+        cancelled: bool,
     },
     Error {
         message: String,
@@ -222,111 +252,84 @@ pub async fn build_initial_request(
     }
 }
 
-/// 运行 Agent 循环，通过 channel 推送事件
+/// 运行 Agent 循环，通过 channel 推送事件。`cancel` 被触发后尽快停止（已生成的产物照常返回）
 pub async fn run_agent_loop(
     history: Vec<ChatMessage>,
     user_message: String,
-    user_attachments: Vec<crate::models::ChatAttachment>,
+    user_attachments: Vec<ChatAttachment>,
     ctx: ToolContext,
     config: AgentConfig,
-    client: std::sync::Arc<crate::llm::LlmClient>,
-) -> mpsc::Receiver<AgentEvent> {
-    let (tx, rx) = mpsc::channel(256);
+    client: std::sync::Arc<LlmClient>,
+    cancel: CancellationToken,
+) -> mpsc::UnboundedReceiver<AgentEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
 
-    let client = client.clone();
     tokio::spawn(async move {
         let max_turns = config.max_turns;
-        let all_tools = REGISTRY.list().await;
         let InitialRequest {
             mut conversation,
             function_defs,
         } = build_initial_request(history, &user_message, &user_attachments, &config, &client).await;
+        let attachments = (!user_attachments.is_empty()).then_some(user_attachments.as_slice());
 
         let mut all_artifacts: Vec<Artifact> = Vec::new();
+        let mut transcript = String::new();
 
         // 所有请求都走标准 ReAct 循环，由 LLM 决定是否调用工具
         for turn in 0..max_turns {
-            // 调用 LLM
-            let tools = if function_defs.is_empty() {
-                None
-            } else {
-                Some(function_defs.as_slice())
-            };
-            let llm_response = match client
-                .chat_with_attachments(
-                    &conversation,
-                    tools,
-                    if user_attachments.is_empty() {
-                        None
-                    } else {
-                        Some(user_attachments.as_slice())
-                    },
-                )
-                .await
-            {
-                Ok(resp) => resp,
-                Err(e) => {
-                    let _ = tx
-                        .send(AgentEvent::Error {
-                            message: format!("LLM 调用失败: {e}"),
-                        })
-                        .await;
+            let tools = (!function_defs.is_empty()).then_some(function_defs.as_slice());
+            let response = match stream_turn(&client, &conversation, tools, attachments, turn, &transcript, &tx, &cancel).await {
+                TurnOutcome::Response(resp) => resp,
+                TurnOutcome::Cancelled => {
+                    finish_cancelled(&tx, transcript, all_artifacts);
+                    return;
+                }
+                TurnOutcome::Failed(e) => {
+                    let _ = tx.send(AgentEvent::Error {
+                        message: format!("LLM 调用失败: {e}"),
+                    });
                     return;
                 }
             };
-
-            let choice = match llm_response.choices.first() {
-                Some(c) => c,
-                None => {
-                    let _ = tx
-                        .send(AgentEvent::Error {
-                            message: "LLM 返回空响应".to_string(),
-                        })
-                        .await;
-                    return;
-                }
-            };
-
-            // 没有工具调用 → 返回文本回复
-            let tool_calls = choice.message.tool_calls.as_ref();
-            if tool_calls.is_none() || tool_calls.map_or(true, |t| t.is_empty()) {
-                let content = choice
-                    .message
-                    .content
-                    .clone()
-                    .unwrap_or_else(|| "我已完成你的请求。".to_string());
-
-                let _ = tx
-                    .send(AgentEvent::Message {
-                        content: content.clone(),
-                    })
-                    .await;
-                let _ = tx
-                    .send(AgentEvent::Done {
-                        summary: content,
-                        artifacts: all_artifacts,
-                    })
-                    .await;
-                return;
+            if let Some(usage) = response.usage {
+                let _ = tx.send(AgentEvent::Usage { usage });
             }
 
-            let tool_calls = tool_calls.unwrap();
+            let Some(choice) = response.choices.into_iter().next() else {
+                let _ = tx.send(AgentEvent::Error {
+                    message: "LLM 返回空响应".to_string(),
+                });
+                return;
+            };
+            let content = choice.message.content.unwrap_or_default();
+            append_transcript(&mut transcript, &content);
+            let tool_calls = choice.message.tool_calls.unwrap_or_default();
 
-            // thinking 内容
-            if let Some(ref content) = choice.message.content {
-                if !content.is_empty() {
-                    let _ = tx
-                        .send(AgentEvent::Thinking {
-                            content: content.chars().take(200).collect(),
-                        })
-                        .await;
-                }
+            // 没有工具调用 → 本轮文本就是最终回复
+            if tool_calls.is_empty() {
+                let summary = if content.trim().is_empty() {
+                    let fallback = "我已完成你的请求。".to_string();
+                    let _ = tx.send(AgentEvent::TextDelta {
+                        text: separator(&transcript) + &fallback,
+                    });
+                    append_transcript(&mut transcript, &fallback);
+                    fallback
+                } else {
+                    content
+                };
+                let _ = tx.send(AgentEvent::Message { content: transcript });
+                let _ = tx.send(AgentEvent::Done {
+                    summary,
+                    artifacts: all_artifacts,
+                    cancelled: false,
+                });
+                return;
             }
 
             // 将 assistant 消息（含 tool_calls）加入上下文
             conversation.push(ChatMessage {
                 role: "assistant".to_string(),
-                content: choice.message.content.clone().unwrap_or_default(),
+                content,
                 tool_calls: Some(
                     tool_calls
                         .iter()
@@ -345,44 +348,21 @@ pub async fn run_agent_loop(
                 tool_call_id: None,
             });
 
-            // 逐个执行工具调用
-            for tc in tool_calls {
-                let tool_name = &tc.function.name;
-                let input: serde_json::Value =
-                    serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::json!({}));
+            let mut calls = Vec::with_capacity(tool_calls.len());
+            for (index, tc) in tool_calls.into_iter().enumerate() {
+                calls.push(PlannedCall {
+                    call_id: call_id(turn, index),
+                    tool: REGISTRY.get(&tc.function.name).await,
+                    input: serde_json::from_str(&tc.function.arguments)
+                        .unwrap_or(serde_json::json!({})),
+                    llm_call_id: tc.id,
+                    name: tc.function.name,
+                });
+            }
 
-                let _ = tx
-                    .send(AgentEvent::ToolCall {
-                        tool: tool_name.clone(),
-                        input: input.clone(),
-                    })
-                    .await;
-
-                // 日志
-                info!("[ToolLog] {} → {}", ctx.session_id, tool_name);
-
-                let result = match REGISTRY.get(tool_name).await {
-                    Some(tool) => tool.call(input.clone(), &ctx).await,
-                    None => ToolResult::err(format!(
-                        "工具 \"{tool_name}\" 未注册。可用工具: {}",
-                        all_tools
-                            .iter()
-                            .map(|t| t.name())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )),
-                };
-
-                let _ = tx
-                    .send(AgentEvent::ToolResult {
-                        tool: tool_name.clone(),
-                        success: result.success,
-                        result: result.data.clone().unwrap_or(serde_json::Value::Null),
-                        error: result.error.clone(),
-                    })
-                    .await;
-
-                // 将工具结果加入上下文
+            let timeout = Duration::from_millis(crate::config::config().llm_tool_timeout_ms);
+            for outcome in execute_calls(calls, &ctx, &tx, &cancel, timeout).await {
+                let result = outcome.result;
                 let tool_content = serde_json::to_string(&serde_json::json!({
                     "success": result.success,
                     "data": result.data,
@@ -393,37 +373,20 @@ pub async fn run_agent_loop(
                 .chars()
                 .take(4000)
                 .collect::<String>();
-
                 conversation.push(ChatMessage {
                     role: "tool".to_string(),
                     content: tool_content,
                     tool_calls: None,
-                    tool_call_id: Some(tc.id.clone()),
+                    tool_call_id: Some(outcome.llm_call_id),
                 });
-
-                // 收集 Artifact
-                if result.success {
-                    if let Some(artifacts) = &result.artifacts {
-                        for art in artifacts {
-                            let artifact = Artifact {
-                                id: Uuid::new_v4().to_string(),
-                                kind: art.kind.clone(),
-                                tool_kind: map_artifact_to_tool_kind(&art.kind),
-                                title: art.title.clone(),
-                                status: "ready".to_string(),
-                                content: art.content.clone(),
-                                version: 1,
-                                created_at: chrono::Utc::now().to_rfc3339(),
-                                updated_at: chrono::Utc::now().to_rfc3339(),
-                            };
-                            all_artifacts.push(artifact.clone());
-                            let _ = tx.send(AgentEvent::Artifact { artifact }).await;
-                        }
-                    }
-                }
+                all_artifacts.extend(outcome.artifacts);
             }
 
-            let _ = tx.send(AgentEvent::TurnEnd { turn: turn + 1 }).await;
+            if cancel.is_cancelled() {
+                finish_cancelled(&tx, transcript, all_artifacts);
+                return;
+            }
+            let _ = tx.send(AgentEvent::TurnEnd { turn: turn + 1 });
         }
 
         // 超过最大轮次，用无工具调用生成总结
@@ -435,50 +398,279 @@ pub async fn run_agent_loop(
             tool_call_id: None,
         });
 
-        match client
-            .chat_with_attachments(
-                &conversation,
-                None,
-                if user_attachments.is_empty() {
-                    None
-                } else {
-                    Some(user_attachments.as_slice())
-                },
-            )
-            .await
-        {
-            Ok(resp) => {
+        match stream_turn(&client, &conversation, None, attachments, max_turns, &transcript, &tx, &cancel).await {
+            TurnOutcome::Response(resp) => {
                 let content = resp
                     .choices
-                    .first()
-                    .and_then(|c| c.message.content.as_deref())
-                    .unwrap_or("任务已完成。")
-                    .to_string();
-                let _ = tx
-                    .send(AgentEvent::Message {
-                        content: content.clone(),
-                    })
-                    .await;
-                let _ = tx
-                    .send(AgentEvent::Done {
-                        summary: content,
-                        artifacts: all_artifacts,
-                    })
-                    .await;
+                    .into_iter()
+                    .next()
+                    .and_then(|c| c.message.content)
+                    .unwrap_or_else(|| "任务已完成。".to_string());
+                append_transcript(&mut transcript, &content);
+                let _ = tx.send(AgentEvent::Message { content: transcript });
+                let _ = tx.send(AgentEvent::Done {
+                    summary: content,
+                    artifacts: all_artifacts,
+                    cancelled: false,
+                });
             }
-            Err(e) => {
+            TurnOutcome::Cancelled => finish_cancelled(&tx, transcript, all_artifacts),
+            TurnOutcome::Failed(e) => {
                 warn!("[AgentLoop] summary generation failed: {e}");
-                let _ = tx
-                    .send(AgentEvent::Done {
-                        summary: format!("已完成 {max_turns} 轮工具调用，但总结生成失败: {e}"),
-                        artifacts: all_artifacts,
-                    })
-                    .await;
+                let _ = tx.send(AgentEvent::Done {
+                    summary: format!("已完成 {max_turns} 轮工具调用，但总结生成失败: {e}"),
+                    artifacts: all_artifacts,
+                    cancelled: false,
+                });
             }
         }
     });
 
     rx
+}
+
+enum TurnOutcome {
+    Response(ChatCompletionResponse),
+    Cancelled,
+    Failed(anyhow::Error),
+}
+
+/// 前端用来关联同一个工具调用各事件的 id
+fn call_id(turn: usize, index: usize) -> String {
+    format!("{turn}-{index}")
+}
+
+/// 新一轮文本与之前的文本之间的分隔
+fn separator(transcript: &str) -> String {
+    if transcript.is_empty() {
+        String::new()
+    } else {
+        "\n\n".to_string()
+    }
+}
+
+fn append_transcript(transcript: &mut String, text: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    transcript.push_str(&separator(transcript));
+    transcript.push_str(text);
+}
+
+fn finish_cancelled(
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+    transcript: String,
+    artifacts: Vec<Artifact>,
+) {
+    info!("[AgentLoop] cancelled by user");
+    if !transcript.trim().is_empty() {
+        let _ = tx.send(AgentEvent::Message { content: transcript });
+    }
+    let _ = tx.send(AgentEvent::Done {
+        summary: "已停止生成".to_string(),
+        artifacts,
+        cancelled: true,
+    });
+}
+
+/// 流式调用一轮 LLM，增量实时转发为 TextDelta / ToolStart
+#[allow(clippy::too_many_arguments)]
+async fn stream_turn(
+    client: &LlmClient,
+    conversation: &[ChatMessage],
+    tools: Option<&[FunctionDef]>,
+    attachments: Option<&[ChatAttachment]>,
+    turn: usize,
+    transcript: &str,
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+    cancel: &CancellationToken,
+) -> TurnOutcome {
+    let sink_tx = tx.clone();
+    let mut pending_separator = separator(transcript);
+    let mut sink = move |event: StreamEvent| {
+        let event = match event {
+            StreamEvent::Delta(text) => AgentEvent::TextDelta {
+                text: std::mem::take(&mut pending_separator) + &text,
+            },
+            StreamEvent::ToolCallStarted { index, name } => AgentEvent::ToolStart {
+                call_id: call_id(turn, index),
+                tool: name,
+            },
+        };
+        let _ = sink_tx.send(event);
+    };
+
+    tokio::select! {
+        _ = cancel.cancelled() => TurnOutcome::Cancelled,
+        result = client.chat_stream_with_attachments(conversation, tools, attachments, &mut sink) => {
+            match result {
+                Ok(resp) => TurnOutcome::Response(resp),
+                Err(e) => TurnOutcome::Failed(e),
+            }
+        }
+    }
+}
+
+struct PlannedCall {
+    call_id: String,
+    llm_call_id: String,
+    name: String,
+    tool: Option<DynTool>,
+    input: serde_json::Value,
+}
+
+struct CallOutcome {
+    llm_call_id: String,
+    result: ToolResult,
+    artifacts: Vec<Artifact>,
+}
+
+/// 把同一轮的调用切成执行段：连续的可并行调用组成一个并发段，不可并行的调用单独成段（屏障）
+pub(crate) fn plan_segments(parallel_safe: &[bool]) -> Vec<Range<usize>> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    for (i, safe) in parallel_safe.iter().enumerate() {
+        if !safe {
+            if start < i {
+                segments.push(start..i);
+            }
+            segments.push(i..i + 1);
+            start = i + 1;
+        }
+    }
+    if start < parallel_safe.len() {
+        segments.push(start..parallel_safe.len());
+    }
+    segments
+}
+
+/// 按段执行工具调用；段内并发（上限 MAX_PARALLEL_TOOLS），结果按原调用顺序返回
+async fn execute_calls(
+    calls: Vec<PlannedCall>,
+    ctx: &ToolContext,
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+    cancel: &CancellationToken,
+    timeout: Duration,
+) -> Vec<CallOutcome> {
+    let flags: Vec<bool> = calls
+        .iter()
+        .map(|c| c.tool.as_ref().map_or(true, |t| t.parallel_safe()))
+        .collect();
+    let segments = plan_segments(&flags);
+
+    let mut calls = calls.into_iter();
+    let mut outcomes = Vec::new();
+    for segment in segments {
+        let batch: Vec<PlannedCall> = calls.by_ref().take(segment.len()).collect();
+        if cancel.is_cancelled() {
+            outcomes.extend(batch.into_iter().map(|call| CallOutcome {
+                llm_call_id: call.llm_call_id,
+                result: ToolResult::err("用户已停止生成，工具未执行"),
+                artifacts: vec![],
+            }));
+            continue;
+        }
+        let results: Vec<CallOutcome> = futures::stream::iter(
+            batch
+                .into_iter()
+                .map(|call| run_one(call, ctx, tx, cancel, timeout)),
+        )
+        .buffered(*MAX_PARALLEL_TOOLS)
+        .collect()
+        .await;
+        outcomes.extend(results);
+    }
+    outcomes
+}
+
+/// 执行单个工具：独立任务运行（panic 隔离），带超时与取消；完成后立即推送结果和产物
+async fn run_one(
+    call: PlannedCall,
+    ctx: &ToolContext,
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+    cancel: &CancellationToken,
+    timeout: Duration,
+) -> CallOutcome {
+    let _ = tx.send(AgentEvent::ToolCall {
+        call_id: call.call_id.clone(),
+        tool: call.name.clone(),
+        input: call.input.clone(),
+    });
+    info!("[ToolLog] {} → {} ({})", ctx.session_id, call.name, call.call_id);
+
+    let started = Instant::now();
+    let result = match call.tool {
+        None => {
+            let available = REGISTRY
+                .list()
+                .await
+                .iter()
+                .map(|t| t.name().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            ToolResult::err(format!("工具 \"{}\" 未注册。可用工具: {available}", call.name))
+        }
+        Some(tool) => {
+            let call_ctx = ctx.for_call(&call.call_id);
+            let input = call.input.clone();
+            let mut handle = tokio::spawn(async move { tool.call(input, &call_ctx).await });
+            let abort = handle.abort_handle();
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    abort.abort();
+                    ToolResult::err("用户已停止生成，工具已中断")
+                }
+                joined = tokio::time::timeout(timeout, &mut handle) => match joined {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(e)) => {
+                        warn!("[AgentLoop] tool {} panicked: {e}", call.name);
+                        ToolResult::err(format!("工具执行异常: {e}"))
+                    }
+                    Err(_) => {
+                        abort.abort();
+                        ToolResult::err(format!("工具执行超时（{} 秒）", timeout.as_secs()))
+                    }
+                }
+            }
+        }
+    };
+
+    let _ = tx.send(AgentEvent::ToolResult {
+        call_id: call.call_id.clone(),
+        tool: call.name.clone(),
+        success: result.success,
+        result: result.data.clone().unwrap_or(serde_json::Value::Null),
+        error: result.error.clone(),
+        duration_ms: started.elapsed().as_millis() as u64,
+    });
+
+    let mut artifacts = Vec::new();
+    if result.success {
+        for art in result.artifacts.iter().flatten() {
+            let now = chrono::Utc::now().to_rfc3339();
+            let artifact = Artifact {
+                id: Uuid::new_v4().to_string(),
+                kind: art.kind.clone(),
+                tool_kind: map_artifact_to_tool_kind(&art.kind),
+                title: art.title.clone(),
+                status: "ready".to_string(),
+                content: art.content.clone(),
+                version: 1,
+                created_at: now.clone(),
+                updated_at: now,
+            };
+            let _ = tx.send(AgentEvent::Artifact {
+                artifact: artifact.clone(),
+            });
+            artifacts.push(artifact);
+        }
+    }
+
+    CallOutcome {
+        llm_call_id: call.llm_call_id,
+        result,
+        artifacts,
+    }
 }
 
 fn map_artifact_to_tool_kind(kind: &str) -> String {
@@ -495,4 +687,152 @@ fn map_artifact_to_tool_kind(kind: &str) -> String {
         _ => "general",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::tool::OfficeTool;
+    use std::sync::Arc;
+
+    /// 测试用工具：睡眠指定毫秒后返回；可设置为 panic 或不可并行
+    struct SleepTool {
+        name: &'static str,
+        ms: u64,
+        parallel: bool,
+        panic: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl OfficeTool for SleepTool {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn description(&self) -> &str {
+            "test"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn parallel_safe(&self) -> bool {
+            self.parallel
+        }
+        async fn call(&self, _input: serde_json::Value, ctx: &ToolContext) -> ToolResult {
+            ctx.send("state_update", serde_json::json!({ "step": self.name }));
+            tokio::time::sleep(Duration::from_millis(self.ms)).await;
+            if self.panic {
+                panic!("boom");
+            }
+            ToolResult::ok(format!("{} done", self.name), vec![])
+        }
+    }
+
+    fn planned(index: usize, tool: SleepTool) -> PlannedCall {
+        PlannedCall {
+            call_id: call_id(0, index),
+            llm_call_id: format!("llm-{index}"),
+            name: tool.name.to_string(),
+            tool: Some(Arc::new(tool)),
+            input: serde_json::json!({}),
+        }
+    }
+
+    fn sleep(name: &'static str, ms: u64) -> SleepTool {
+        SleepTool { name, ms, parallel: true, panic: false }
+    }
+
+    fn test_ctx(events: Arc<std::sync::Mutex<Vec<serde_json::Value>>>) -> ToolContext {
+        ToolContext::new("s".into(), "u".into(), None, None, vec![], move |_, data| {
+            events.lock().unwrap().push(data);
+        })
+    }
+
+    async fn run(
+        calls: Vec<PlannedCall>,
+        cancel: &CancellationToken,
+        timeout: Duration,
+    ) -> (Vec<CallOutcome>, Duration, Vec<serde_json::Value>) {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let ctx = test_ctx(events.clone());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let started = Instant::now();
+        let outcomes = execute_calls(calls, &ctx, &tx, cancel, timeout).await;
+        let emitted = events.lock().unwrap().clone();
+        (outcomes, started.elapsed(), emitted)
+    }
+
+    #[tokio::test]
+    async fn parallel_calls_overlap_and_keep_call_order() {
+        let calls = vec![planned(0, sleep("a", 300)), planned(1, sleep("b", 100)), planned(2, sleep("c", 200))];
+        let (outcomes, elapsed, emitted) = run(calls, &CancellationToken::new(), Duration::from_secs(5)).await;
+        assert!(elapsed < Duration::from_millis(550), "并发执行应接近最慢的那个: {elapsed:?}");
+        let ids: Vec<_> = outcomes.iter().map(|o| o.llm_call_id.as_str()).collect();
+        assert_eq!(ids, ["llm-0", "llm-1", "llm-2"]);
+        assert!(outcomes.iter().all(|o| o.result.success));
+        // 工具推送的进度事件自动带上 call_id
+        let mut tagged: Vec<_> = emitted.iter().map(|e| e["call_id"].as_str().unwrap().to_string()).collect();
+        tagged.sort();
+        assert_eq!(tagged, ["0-0", "0-1", "0-2"]);
+    }
+
+    #[tokio::test]
+    async fn barrier_tool_runs_alone() {
+        let barrier = SleepTool { name: "plan", ms: 200, parallel: false, panic: false };
+        let calls = vec![planned(0, barrier), planned(1, sleep("a", 200)), planned(2, sleep("b", 200))];
+        let (outcomes, elapsed, _) = run(calls, &CancellationToken::new(), Duration::from_secs(5)).await;
+        assert!(elapsed >= Duration::from_millis(400), "屏障后再并发: {elapsed:?}");
+        assert!(elapsed < Duration::from_millis(600), "{elapsed:?}");
+        assert_eq!(outcomes.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn panic_and_timeout_are_isolated() {
+        let panicking = SleepTool { name: "bad", ms: 10, parallel: true, panic: true };
+        let calls = vec![planned(0, panicking), planned(1, sleep("slow", 5_000)), planned(2, sleep("ok", 10))];
+        let (outcomes, elapsed, _) = run(calls, &CancellationToken::new(), Duration::from_millis(200)).await;
+        assert!(elapsed < Duration::from_secs(1));
+        assert!(!outcomes[0].result.success);
+        assert!(outcomes[0].result.observation.contains("异常"));
+        assert!(!outcomes[1].result.success);
+        assert!(outcomes[1].result.observation.contains("超时"));
+        assert!(outcomes[2].result.success);
+    }
+
+    #[tokio::test]
+    async fn cancel_interrupts_running_and_skips_pending_segments() {
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            trigger.cancel();
+        });
+        let barrier = SleepTool { name: "plan", ms: 10, parallel: false, panic: false };
+        let calls = vec![planned(0, sleep("long", 5_000)), planned(1, barrier)];
+        let (outcomes, elapsed, _) = run(calls, &cancel, Duration::from_secs(10)).await;
+        assert!(elapsed < Duration::from_secs(1), "{elapsed:?}");
+        assert!(outcomes.iter().all(|o| !o.result.success));
+        assert!(outcomes[0].result.observation.contains("中断"));
+        assert!(outcomes[1].result.observation.contains("未执行"));
+    }
+
+    #[test]
+    fn segments_group_parallel_calls_and_isolate_barriers() {
+        assert_eq!(plan_segments(&[]), Vec::<Range<usize>>::new());
+        assert_eq!(plan_segments(&[true, true, true]), vec![0..3]);
+        assert_eq!(plan_segments(&[false, true]), vec![0..1, 1..2]);
+        assert_eq!(
+            plan_segments(&[true, false, false, true, true]),
+            vec![0..1, 1..2, 2..3, 3..5]
+        );
+    }
+
+    #[test]
+    fn transcript_joins_turns_with_blank_line() {
+        let mut t = String::new();
+        append_transcript(&mut t, "我先规划大纲。");
+        append_transcript(&mut t, "  ");
+        append_transcript(&mut t, "已生成 PPT。");
+        assert_eq!(t, "我先规划大纲。\n\n已生成 PPT。");
+        assert_eq!(separator(""), "");
+    }
 }

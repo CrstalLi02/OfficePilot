@@ -8,6 +8,8 @@ import { FilePickerPanel } from './FilePickerPanel'
 import type { AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PPTProject, ToolKind, ToolConfigMap } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 import { ToolConfigDropdown } from './ToolConfigDropdown'
+import { RunTimeline } from './RunTimeline'
+import type { AgentRunState } from '@/lib/agent-run'
 
 interface ChatPanelProps {
   messages: ChatMessage[]
@@ -17,6 +19,8 @@ interface ChatPanelProps {
   streamPhase: 'idle' | 'thinking' | 'generating' | 'finishing' | 'done' | 'error'
   processLogs: string[]
   traceEvents: AgentTraceEvent[]
+  /** 本轮工具调用状态（并行卡片） */
+  runState: AgentRunState
   selectedTheme: string
   activeTool: ToolKind
   projects: PPTProject[]
@@ -294,6 +298,7 @@ export function ChatPanel({
   streamPhase,
   processLogs,
   traceEvents,
+  runState,
   selectedTheme,
   activeTool,
   projects,
@@ -478,7 +483,7 @@ export function ChatPanel({
     )
   )
 
-  const showProcessPanel = isStreaming || traceEvents.length > 0 || processLogs.length > 0
+  const showProcessPanel = isStreaming || traceEvents.length > 0 || processLogs.length > 0 || runState.tools.length > 0
   const artifactMeta: Record<string, { icon: typeof Bot; label: string; exportLabel?: string }> = {
     ppt: { icon: LayoutDashboard, label: 'PPT', exportLabel: '导出 PPTX' },
     document: { icon: FileEdit, label: 'Word 文档', exportLabel: '导出 DOCX' },
@@ -731,6 +736,8 @@ export function ChatPanel({
                   {!isStreaming && <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${processPanelExpanded ? 'rotate-180' : ''}`} />}
                 </div>
               </button>
+
+              {processPanelExpanded && <RunTimeline run={runState} isStreaming={isStreaming} />}
 
               {/* 执行步骤日志 — 逐行流式 */}
               {processPanelExpanded && visibleLogs.length > 0 && (

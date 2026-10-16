@@ -13,6 +13,7 @@ import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu } from 'lucide-react'
 import type { AppSettings, Artifact, ChatAttachment, ConversationRecord, InputRef, LLMProfile, PersistedSession, ProjectMeta, ToolKind, ToolConfigMap } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
+import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
 const LOGO_URL = '/logo.png'
 
 type ToastTone = 'success' | 'error' | 'info'
@@ -182,6 +183,8 @@ export default function Studio() {
   const [streamStatus, setStreamStatus] = useState('空闲')
   const [streamPhase, setStreamPhase] = useState<'idle' | 'thinking' | 'generating' | 'finishing' | 'done' | 'error'>('idle')
   const [processLogs, setProcessLogs] = useState<string[]>([])
+  /** 本轮工具调用状态（并行卡片） */
+  const [runState, setRunState] = useState<AgentRunState>(EMPTY_RUN)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [inputRefs, setInputRefs] = useState<InputRef[]>([])
   /** 历史会话产物列表（供 @ 引用） */
@@ -192,7 +195,7 @@ export default function Studio() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   // 每个 tab 的本地 UI 状态（与 store 中的对话状态分离）
-  const [tabUiState, setTabUiState] = useState<Record<string, { input: string; attachments: ChatAttachment[]; inputRefs: InputRef[]; streamStatus: string; streamPhase: typeof streamPhase; processLogs: string[]; activeTool: ToolKind; activeProjectId: string | null; selectedTheme: string; toolConfig: ToolConfigMap; showArtifactPanel: boolean; pptProgress: { current: number; total: number } | null; followLatestSlide: boolean }>>({})
+  const [tabUiState, setTabUiState] = useState<Record<string, { input: string; attachments: ChatAttachment[]; inputRefs: InputRef[]; streamStatus: string; streamPhase: typeof streamPhase; processLogs: string[]; runState?: AgentRunState; activeTool: ToolKind; activeProjectId: string | null; selectedTheme: string; toolConfig: ToolConfigMap; showArtifactPanel: boolean; pptProgress: { current: number; total: number } | null; followLatestSlide: boolean }>>({})
   const tabCounterRef = useRef(0)
 
   // 设置 & 模型
@@ -203,6 +206,9 @@ export default function Studio() {
   const activeArtifact = artifacts.find((artifact) => artifact.id === activeArtifactId) || null
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  /** 当前运行所属会话（新会话由 run_start 事件告知），用于调用停止接口 */
+  const runSessionRef = useRef<string | null>(null)
+  const stopTimerRef = useRef<number | null>(null)
   const autoExportedArtifactIdsRef = useRef<Set<string>>(new Set())
   const autoSavedArtifactIdsRef = useRef<Set<string>>(new Set())
   const attachmentInputRef = useRef<HTMLInputElement>(null)
@@ -400,7 +406,7 @@ export default function Studio() {
     if (activeTabId) {
       setTabUiState((prev) => {
         const current = prev[activeTabId] || {}
-        return { ...prev, [activeTabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
+        return { ...prev, [activeTabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, runState, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
       })
       updateTab(activeTabId, { input, activeTool, activeProjectId, selectedTheme, toolConfig, streamStatus, streamPhase, processLogs, attachments })
     }
@@ -423,6 +429,7 @@ export default function Studio() {
     setStreamStatus('空闲')
     setStreamPhase('idle')
     setProcessLogs([])
+    setRunState(EMPTY_RUN)
     setToolConfig({})
     setShowArtifactPanel(false)
     setPptProgress(null)
@@ -435,7 +442,7 @@ export default function Studio() {
     if (tabId === activeTabId) {
       setTabUiState((prev) => {
         const current = prev[tabId] || {}
-        return { ...prev, [tabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
+        return { ...prev, [tabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, runState, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
       })
     }
 
@@ -471,6 +478,7 @@ export default function Studio() {
           setStreamStatus(nextUi.streamStatus || '空闲')
           setStreamPhase(nextUi.streamPhase || 'idle')
           setProcessLogs(nextUi.processLogs || [])
+          setRunState(nextUi.runState || EMPTY_RUN)
           setShowArtifactPanel(nextUi.showArtifactPanel || false)
           setPptProgress(nextUi.pptProgress || null)
           setFollowLatestSlide(nextUi.followLatestSlide ?? true)
@@ -490,7 +498,7 @@ export default function Studio() {
     if (activeTabId) {
       setTabUiState((prev) => {
         const current = prev[activeTabId] || {}
-        return { ...prev, [activeTabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
+        return { ...prev, [activeTabId]: { ...current, input, attachments, inputRefs, streamStatus, streamPhase, processLogs, runState, activeTool, activeProjectId, selectedTheme, toolConfig, showArtifactPanel, pptProgress, followLatestSlide } }
       })
       updateTab(activeTabId, { input, activeTool, activeProjectId, selectedTheme, toolConfig, streamStatus, streamPhase, processLogs, attachments })
     }
@@ -511,6 +519,7 @@ export default function Studio() {
       setStreamStatus(targetUi.streamStatus || '空闲')
       setStreamPhase(targetUi.streamPhase || 'idle')
       setProcessLogs(targetUi.processLogs || [])
+      setRunState(targetUi.runState || EMPTY_RUN)
       setShowArtifactPanel(targetUi.showArtifactPanel || false)
       setPptProgress(targetUi.pptProgress || null)
       setFollowLatestSlide(targetUi.followLatestSlide ?? true)
@@ -619,6 +628,7 @@ export default function Studio() {
     setStreamPhase('idle')
     setStreamStatus('空闲')
     setProcessLogs([])
+    setRunState(EMPTY_RUN)
     setAttachments([])
   }
 
@@ -1157,6 +1167,8 @@ export default function Studio() {
     setPptProgress(null)
     setStreamPhase('thinking')
     setStreamStatus(pendingAttachments.length > 0 ? '正在整理消息与附件...' : '正在理解需求...')
+    setRunState(EMPTY_RUN)
+    runSessionRef.current = sessionId
     setProcessLogs([
       '开始处理请求',
       `识别工具：${inferredTool}`,
@@ -1217,7 +1229,23 @@ export default function Studio() {
         selectedModel,
         pendingAttachments,
         (event, data) => {
+          setRunState((state) => applyRunEvent(state, event, data))
           switch (event) {
+            case 'run_start':
+              if (data.session_id) runSessionRef.current = data.session_id
+              break
+
+            case 'tool_start':
+              setStreamPhase('generating')
+              setStreamStatus(`正在准备工具：${data.tool}`)
+              break
+
+            case 'tool_call':
+              setStreamPhase('generating')
+              setStreamStatus(`正在执行：${data.tool}`)
+              setProcessLogs((logs) => [...logs.slice(-8), `调用工具：${data.tool}`])
+              break
+
             case 'message':
               setStreamPhase(data.start ? 'thinking' : 'finishing')
               setStreamStatus(data.start ? '正在连接模型...' : '正在整理回复...')
@@ -1363,11 +1391,27 @@ export default function Studio() {
             }
 
             case 'done': {
-              playConversationDoneSound()
               const doneArtifacts = Array.isArray(data.new_artifacts) ? data.new_artifacts : []
+              const doneStatus = data.cancelled ? '已停止生成' : doneArtifacts.length > 0 ? '生成完成' : '回复完成'
+              if (data.cancelled) {
+                if (!assistantText.trim()) {
+                  assistantText = '已停止本次生成。'
+                  usePPTStore.setState((state) => {
+                    const msgs = [...state.messages]
+                    msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: assistantText }
+                    const tabId = state.activeTabId
+                    if (tabId && state.tabs[tabId]) {
+                      return { messages: msgs, tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } } }
+                    }
+                    return { messages: msgs }
+                  })
+                }
+              } else {
+                playConversationDoneSound()
+              }
               setStreamPhase('done')
-              setStreamStatus(doneArtifacts.length > 0 ? '生成完成' : '回复完成')
-              if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'done', streamStatus: doneArtifacts.length > 0 ? '生成完成' : '回复完成' })
+              setStreamStatus(doneStatus)
+              if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'done', streamStatus: doneStatus })
               if (data.session_id) setSessionId(data.session_id)
               // 确保对话结束后立即刷新列表，让当前对话出现在侧边栏
               refreshConversations()
@@ -1452,6 +1496,10 @@ export default function Studio() {
         return { messages: msgs }
       })
     } finally {
+      if (stopTimerRef.current) {
+        window.clearTimeout(stopTimerRef.current)
+        stopTimerRef.current = null
+      }
       setStreaming(false)
       abortRef.current = null
       refreshConversations()
@@ -1461,6 +1509,21 @@ export default function Studio() {
   }
 
   const handleStop = () => {
+    const runSession = runSessionRef.current
+    if (runSession && abortRef.current) {
+      // 让后端中断 LLM 与工具，并通过 done(cancelled) 正常收尾（已生成的产物会保存）
+      setStreamStatus('正在停止...')
+      chatApi.cancel(runSession).catch((err) => console.error('Cancel error:', err))
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current)
+      stopTimerRef.current = window.setTimeout(forceStop, 3000)
+      return
+    }
+    forceStop()
+  }
+
+  /** 直接断开流（后端无响应或尚未拿到会话 id 时的兜底） */
+  const forceStop = () => {
+    stopTimerRef.current = null
     abortRef.current?.abort()
     setStreaming(false)
     setStreamPhase('idle')
@@ -1888,6 +1951,7 @@ export default function Studio() {
                 streamPhase={streamPhase}
                 processLogs={processLogs}
                 traceEvents={[]}
+                runState={runState}
                 selectedTheme={selectedTheme}
                 activeTool={activeTool}
                 projects={pptProjects}

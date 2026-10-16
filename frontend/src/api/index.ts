@@ -149,6 +149,8 @@ export const notificationApi = {
 
 // ===== 对话 API (SSE) =====
 export const chatApi = {
+  /** 停止某个会话正在运行的 Agent（后端会中断 LLM 与工具，并保存已生成的产物） */
+  cancel: (sessionId: string) => api.post('/chat/cancel', { session_id: sessionId }),
   stream: async (
     message: string,
     projectId: string | null,

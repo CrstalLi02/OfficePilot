@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tracing::debug;
 
+use super::stream::{read_stream_response, StreamEvent, StreamSink};
 use super::types::*;
 use crate::models::{ChatAttachment, ChatMessage, LlmProfileConfig};
 
@@ -103,6 +104,11 @@ fn apply_profile(
             }
         })
         .unwrap_or_else(|| profile.default_model.clone());
+}
+
+/// 请求参数被拒绝（而非鉴权/限流/服务端错误）的状态码
+fn is_param_rejection(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 400 | 404 | 415 | 422)
 }
 
 fn should_retry_with_next_key(status: reqwest::StatusCode) -> bool {
@@ -211,56 +217,61 @@ impl LlmClient {
         tools: Option<&[FunctionDef]>,
         user_attachments: Option<&[ChatAttachment]>,
     ) -> Result<ChatCompletionResponse> {
-        let has_image_attachments = has_image_attachments(user_attachments);
-        let req = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: build_request_messages(messages, user_attachments),
-            tools: tools.map(|t| t.to_vec()),
-            tool_choice: None,
-            temperature: Some(0.7),
-            stream: Some(false),
-        };
-
-        match self.send_chat_request(&req).await {
-            Ok(result) => Ok(result),
-            Err(err) if has_image_attachments && tools.is_some() => {
-                tracing::warn!(
-                    "vision request with tools failed, retrying vision chat without tools: {err}"
-                );
-                let vision_only_req = ChatCompletionRequest {
-                    model: self.model.clone(),
-                    messages: build_request_messages(messages, user_attachments),
-                    tools: None,
-                    tool_choice: None,
-                    temperature: Some(0.7),
-                    stream: Some(false),
-                };
-
-                match self.send_chat_request(&vision_only_req).await {
-                    Ok(result) => Ok(result),
-                    Err(vision_err) => {
-                        tracing::warn!(
-                            "vision-only retry failed, retrying text-only chat: {vision_err}"
-                        );
-                        self.retry_text_only_after_vision_failure(messages, tools)
-                            .await
-                    }
-                }
-            }
-            Err(err) if has_image_attachments => {
-                tracing::warn!("vision request failed, retrying text-only chat: {err}");
-                self.retry_text_only_after_vision_failure(messages, tools)
-                    .await
-            }
-            Err(err) => Err(err),
-        }
+        self.chat_inner(messages, tools, user_attachments, None).await
     }
 
-    async fn retry_text_only_after_vision_failure(
+    /// 流式 chat：增量通过 `sink` 实时回调，返回拼装好的完整响应。
+    /// 服务商不支持流式参数时逐级降级，最终退回非流式（整段内容作为一次增量回调）。
+    pub async fn chat_stream_with_attachments(
         &self,
         messages: &[ChatMessage],
         tools: Option<&[FunctionDef]>,
+        user_attachments: Option<&[ChatAttachment]>,
+        sink: &mut StreamSink<'_>,
     ) -> Result<ChatCompletionResponse> {
+        self.chat_inner(messages, tools, user_attachments, Some(sink))
+            .await
+    }
+
+    async fn chat_inner(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[FunctionDef]>,
+        user_attachments: Option<&[ChatAttachment]>,
+        mut sink: Option<&mut StreamSink<'_>>,
+    ) -> Result<ChatCompletionResponse> {
+        let has_image_attachments = has_image_attachments(user_attachments);
+        let req = ChatCompletionRequest::new(
+            self.model.clone(),
+            build_request_messages(messages, user_attachments),
+            tools.map(|t| t.to_vec()),
+        );
+
+        let err = match self.complete(req, sink.as_mut().map(|s| &mut **s)).await {
+            Ok(result) => return Ok(result),
+            Err(err) => err,
+        };
+        if !has_image_attachments {
+            return Err(err);
+        }
+
+        if tools.is_some() {
+            tracing::warn!("vision request with tools failed, retrying vision chat without tools: {err}");
+            let vision_only_req = ChatCompletionRequest::new(
+                self.model.clone(),
+                build_request_messages(messages, user_attachments),
+                None,
+            );
+            match self.complete(vision_only_req, sink.as_mut().map(|s| &mut **s)).await {
+                Ok(result) => return Ok(result),
+                Err(vision_err) => {
+                    tracing::warn!("vision-only retry failed, retrying text-only chat: {vision_err}");
+                }
+            }
+        } else {
+            tracing::warn!("vision request failed, retrying text-only chat: {err}");
+        }
+
         let mut fallback_messages = messages.to_vec();
         fallback_messages.push(ChatMessage {
             role: "system".to_string(),
@@ -268,30 +279,82 @@ impl LlmClient {
             tool_calls: None,
             tool_call_id: None,
         });
-        let fallback_req = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: build_request_messages(&fallback_messages, None),
-            tools: tools.map(|t| t.to_vec()),
-            tool_choice: None,
-            temperature: Some(0.7),
-            stream: Some(false),
-        };
-        self.send_chat_request(&fallback_req).await
+        let fallback_req = ChatCompletionRequest::new(
+            self.model.clone(),
+            build_request_messages(&fallback_messages, None),
+            tools.map(|t| t.to_vec()),
+        );
+        self.complete(fallback_req, sink).await
     }
 
-    async fn send_chat_request(
+    /// 发送一次请求。有 sink 时走流式，并按兼容性逐级降级：
+    /// 完整流式参数 → 去掉 stream_options/parallel_tool_calls → 非流式
+    async fn complete(
+        &self,
+        mut req: ChatCompletionRequest,
+        sink: Option<&mut StreamSink<'_>>,
+    ) -> Result<ChatCompletionResponse> {
+        let Some(sink) = sink else {
+            req.stream = Some(false);
+            let resp = self.post_with_keys(&req).await.map_err(|(_, e)| e)?;
+            return Ok(resp.json().await?);
+        };
+
+        req.stream = Some(true);
+        req.stream_options = Some(serde_json::json!({ "include_usage": true }));
+        req.parallel_tool_calls = req.tools.as_ref().map(|_| true);
+        let mut last_err = None;
+        for attempt in 0..2 {
+            if attempt == 1 {
+                req.stream_options = None;
+                req.parallel_tool_calls = None;
+            }
+            match self.post_with_keys(&req).await {
+                Ok(resp) => return read_stream_response(resp, &self.model, sink).await,
+                Err((Some(status), err)) if is_param_rejection(status) => {
+                    tracing::warn!("LLM 拒绝流式参数（{status}），降级重试: {err}");
+                    last_err = Some(err);
+                }
+                Err((_, err)) => return Err(err),
+            }
+        }
+
+        tracing::warn!("流式请求不可用，退回非流式: {:?}", last_err);
+        req.stream = Some(false);
+        let resp: ChatCompletionResponse = self
+            .post_with_keys(&req)
+            .await
+            .map_err(|(_, e)| e)?
+            .json()
+            .await?;
+        if let Some(message) = resp.choices.first().map(|c| &c.message) {
+            for (index, tc) in message.tool_calls.iter().flatten().enumerate() {
+                sink(StreamEvent::ToolCallStarted {
+                    index,
+                    name: tc.function.name.clone(),
+                });
+            }
+            if let Some(content) = message.content.clone().filter(|c| !c.is_empty()) {
+                sink(StreamEvent::Delta(content));
+            }
+        }
+        Ok(resp)
+    }
+
+    /// 依次尝试各个 API key，返回第一个成功的响应；失败时带上最后的 HTTP 状态码
+    async fn post_with_keys(
         &self,
         req: &ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse> {
+    ) -> std::result::Result<reqwest::Response, (Option<reqwest::StatusCode>, anyhow::Error)> {
         let url = format!("{}/chat/completions", self.base_url);
-        debug!("LLM chat request to {url}");
+        debug!("LLM chat request to {url} (stream={:?})", req.stream);
 
         let keys = if self.api_keys.is_empty() {
             vec![String::new()]
         } else {
             self.api_keys.clone()
         };
-        let mut last_error: Option<anyhow::Error> = None;
+        let mut last_error: Option<(Option<reqwest::StatusCode>, anyhow::Error)> = None;
 
         for (index, api_key) in keys.iter().enumerate() {
             let resp = self
@@ -307,7 +370,7 @@ impl LlmClient {
             let resp = match resp {
                 Ok(resp) => resp,
                 Err(err) => {
-                    last_error = Some(err.into());
+                    last_error = Some((None, err.into()));
                     if index + 1 < keys.len() {
                         continue;
                     }
@@ -321,17 +384,16 @@ impl LlmClient {
                 let err = anyhow!("LLM 返回错误 {status}: {body}");
                 if should_retry_with_next_key(status) && index + 1 < keys.len() {
                     tracing::warn!("LLM key failed with {status}, retrying next key");
-                    last_error = Some(err);
+                    last_error = Some((Some(status), err));
                     continue;
                 }
-                return Err(err);
+                return Err((Some(status), err));
             }
 
-            let result: ChatCompletionResponse = resp.json().await?;
-            return Ok(result);
+            return Ok(resp);
         }
 
-        Err(last_error.unwrap_or_else(|| anyhow!("当前模型服务未配置可用 API Key")))
+        Err(last_error.unwrap_or_else(|| (None, anyhow!("当前模型服务未配置可用 API Key"))))
     }
 
     /// 提取 JSON（容错：去 markdown fence、截取首尾花括号）

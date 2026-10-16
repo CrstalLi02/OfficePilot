@@ -55,6 +55,11 @@ struct StoryboardPlan {
 
 #[async_trait]
 impl OfficeTool for VideoStoryboardTool {
+    /// 与其他 PPT/分镜步骤有先后依赖（经 scratchpad 传递），不参与并发
+    fn parallel_safe(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "video_storyboard"
     }
