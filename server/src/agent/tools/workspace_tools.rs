@@ -257,7 +257,7 @@ impl OfficeTool for WorkspaceOrganizeTool {
         "workspace_organize"
     }
     fn description(&self) -> &str {
-        "批量整理用户工作区：建目录、移动、重命名文件或文件夹，把文档转换成 md / txt。一次提交一组操作，系统会先校验全部操作，再依次执行；整组可由用户一键撤销。不支持删除。用户说“按项目归档”“统一改名”“把这些 Word 转成 Markdown”时使用；整理前先用 workspace_list 看清现状。"
+        "批量整理用户工作区：建目录、移动、重命名文件或文件夹，把文档转换成 md / txt，把 Excel 转换成 csv（每个 sheet 一个文件）。一次提交一组操作，系统会先校验全部操作，再依次执行；整组可由用户一键撤销。不支持删除。用户说“按项目归档”“统一改名”“把这些 Word 转成 Markdown”时使用；整理前先用 workspace_list 看清现状。"
     }
     fn parallel_safe(&self) -> bool {
         false
@@ -275,7 +275,7 @@ impl OfficeTool for WorkspaceOrganizeTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "op": { "type": "string", "enum": ["mkdir", "move", "rename", "convert"] },
+                            "op": { "type": "string", "enum": ["mkdir", "move", "rename", "convert"], "description": "convert 的 to 可为 md / txt / csv（csv 仅限 Excel）" },
                             "path": { "type": "string" },
                             "from": { "type": "string" },
                             "to": { "type": "string" },

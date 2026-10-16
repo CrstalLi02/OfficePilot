@@ -597,6 +597,10 @@ fn resolve_target(tree: &Tree, path: &str) -> Result<Target, String> {
     }
 }
 
+fn is_spreadsheet(name: &str) -> bool {
+    matches!(name.rsplit('.').next().map(str::to_lowercase).as_deref(), Some("xlsx" | "xlsm" | "xls" | "xlsb" | "ods"))
+}
+
 fn check_name(name: &str) -> Result<(), String> {
     let parts = normalize(name)?;
     if parts.len() != 1 || name.contains('/') {
@@ -663,8 +667,11 @@ pub async fn organize(pool: &DbPool, owner_id: &str, ops: &[OrganizeOp], session
             }),
             OrganizeOp::Rename { path, name } => resolve_or_planned(path, planned).and_then(|_| check_name(name)),
             OrganizeOp::Convert { path, to, dest } => {
-                if !matches!(to.as_str(), "md" | "txt") {
-                    Err(format!("暂只支持转换为 md / txt，不支持 {to}"))
+                let is_sheet = |p: &str| tree.find_file(p).ok().flatten().is_some_and(|f| is_spreadsheet(&f.name));
+                if !matches!(to.as_str(), "md" | "txt" | "csv") {
+                    Err(format!("只支持转换为 md / txt / csv，不支持 {to}"))
+                } else if to == "csv" && !is_sheet(path) {
+                    Err(format!("只有 Excel / ODS 表格可以转换为 csv：{path}"))
                 } else {
                     match tree.find_file(path) {
                         Ok(Some(_)) => dest.as_deref().map_or(Ok(()), |d| normalize(d).map(|_| ())),
@@ -763,30 +770,52 @@ async fn run_ops(pool: &DbPool, owner_id: &str, tree: &mut Tree, ops: &[Organize
             },
             OrganizeOp::Convert { path, to, dest } => {
                 let file = tree.find_file(path).map_err(bad)?.cloned().ok_or_else(|| bad(format!("找不到文件：{path}")))?;
-                let text = text_of(pool, owner_id, &file).await?;
                 let folder = match dest {
                     Some(d) => ensure_folder(pool, owner_id, tree, d, journal).await?,
                     None => file.folder_id.clone(),
                 };
-                let stem = file.name.rsplit_once('.').map_or(file.name.as_str(), |(s, _)| s);
-                let name = unique_name(&tree.names_in(folder.as_deref()), &format!("{stem}.{to}"));
-                let mime = if to == "md" { "text/markdown" } else { "text/plain" };
-                let row = crate::file_store::save_file_bytes(
-                    pool,
-                    owner_id,
-                    folder.as_deref(),
-                    &name,
-                    text.as_bytes(),
-                    mime,
-                    &format!("由 {} 转换", file.name),
-                    json!({ "source": "agent_convert", "from_file_id": file.id }),
-                )
-                .await
-                .map_err(|e| bad(format!("转换失败：{e}")))?
-                .ok_or_else(|| bad(format!("{} 没有可提取的文字", file.name)))?;
-                journal.inverse.push(Inverse::DeleteFile { file_id: row.id.clone() });
-                journal.lines.push(format!("{} 转换为 {}/{}", tree.file_path(&file), tree.folder_path(folder.as_deref()).trim_end_matches('/'), row.name));
-                tree.files.push(row);
+                let stem = file.name.rsplit_once('.').map_or(file.name.as_str(), |(s, _)| s).to_string();
+                // 每个输出文件：(文件名, 内容, MIME)
+                let outputs: Vec<(String, String, &str)> = if to == "csv" {
+                    // 表格完整读取（每个 sheet 一个 csv），不受文本提取的行数限制
+                    let disk = std::path::PathBuf::from(&file.file_path);
+                    let sheets = tokio::task::spawn_blocking(move || crate::data_engine::excel_to_csv(&disk))
+                        .await
+                        .map_err(|e| bad(e.to_string()))?
+                        .map_err(bad)?;
+                    let single = sheets.len() == 1;
+                    sheets
+                        .into_iter()
+                        .map(|(sheet, csv)| {
+                            let name = if single { format!("{stem}.csv") } else { format!("{stem}-{sheet}.csv") };
+                            // 带 BOM，Excel 打开中文不乱码
+                            (name, format!("\u{feff}{csv}"), "text/csv")
+                        })
+                        .collect()
+                } else {
+                    let text = text_of(pool, owner_id, &file).await?;
+                    let mime = if to == "md" { "text/markdown" } else { "text/plain" };
+                    vec![(format!("{stem}.{to}"), text, mime)]
+                };
+                for (name, content, mime) in outputs {
+                    let name = unique_name(&tree.names_in(folder.as_deref()), &name);
+                    let row = crate::file_store::save_file_bytes(
+                        pool,
+                        owner_id,
+                        folder.as_deref(),
+                        &name,
+                        content.as_bytes(),
+                        mime,
+                        &format!("由 {} 转换", file.name),
+                        json!({ "source": "agent_convert", "from_file_id": file.id }),
+                    )
+                    .await
+                    .map_err(|e| bad(format!("转换失败：{e}")))?
+                    .ok_or_else(|| bad(format!("{} 没有可提取的内容", file.name)))?;
+                    journal.inverse.push(Inverse::DeleteFile { file_id: row.id.clone() });
+                    journal.lines.push(format!("{} 转换为 {}/{}", tree.file_path(&file), tree.folder_path(folder.as_deref()).trim_end_matches('/'), row.name));
+                    tree.files.push(row);
+                }
             }
         }
     }
@@ -1077,6 +1106,39 @@ mod tests {
         let restored = Tree::load(&pool, "u1").await.unwrap();
         assert_eq!(paths(&restored), before);
         assert!(restored.folders.is_empty(), "新建的空目录应被删除");
+    }
+
+    #[tokio::test]
+    async fn convert_excel_to_csv_per_sheet_and_undo() {
+        let pool = memory_pool().await;
+        let xlsx = std::env::temp_dir().join(format!("walioffice-ws-{}.xlsx", uuid::Uuid::new_v4()));
+        let mut wb = rust_xlsxwriter::Workbook::new();
+        let s1 = wb.add_worksheet().set_name("一月").unwrap();
+        s1.write(0, 0, "产品").unwrap();
+        s1.write(1, 0, "A").unwrap();
+        wb.add_worksheet().set_name("二月").unwrap().write(0, 0, "产品").unwrap();
+        wb.save(&xlsx).unwrap();
+        sqlx::query("INSERT INTO files (id, owner_id, name, file_path, file_type, file_size, created_at, updated_at) VALUES ('x1', 'u1', '销售.xlsx', ?, 'excel', 1, 't', 't')")
+            .bind(xlsx.to_string_lossy().to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let ops: Vec<OrganizeOp> = serde_json::from_value(json!([{"op": "convert", "path": "/销售.xlsx", "to": "csv", "dest": "/CSV"}])).unwrap();
+        let (lines, op_id) = organize(&pool, "u1", &ops, None).await.unwrap();
+        assert_eq!(lines.len(), 2);
+        let tree = Tree::load(&pool, "u1").await.unwrap();
+        assert_eq!(paths(&tree), ["/CSV/销售-一月.csv", "/CSV/销售-二月.csv", "/销售.xlsx"]);
+        let csv = tree.find_file("/CSV/销售-一月.csv").unwrap().unwrap();
+        assert_eq!(std::fs::read_to_string(&csv.file_path).unwrap(), "\u{feff}产品\nA\n");
+
+        // 只有表格能转 csv
+        let bad_ops: Vec<OrganizeOp> = serde_json::from_value(json!([{"op": "convert", "path": "/CSV/销售-一月.csv", "to": "csv"}])).unwrap();
+        assert!(organize(&pool, "u1", &bad_ops, None).await.is_err());
+
+        undo(&pool, "u1", &op_id.unwrap()).await.unwrap();
+        assert_eq!(paths(&Tree::load(&pool, "u1").await.unwrap()), ["/销售.xlsx"]);
+        let _ = std::fs::remove_file(&xlsx);
     }
 
     #[tokio::test]

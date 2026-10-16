@@ -1,6 +1,7 @@
 mod agent;
 mod auth;
 mod config;
+mod data_engine;
 mod db;
 mod error;
 mod eval;

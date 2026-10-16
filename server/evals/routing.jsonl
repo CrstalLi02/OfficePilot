@@ -51,3 +51,9 @@
 {"id":"ws-save-note","category":"workspace","message":"帮我在文件里新建一个“待办”文件夹，并写一份本周待办清单存进去","expect_any":["workspace_write","workspace_organize"],"forbid":["video_generate"]}
 {"id":"ws-ppt-from-file","category":"workspace","message":"根据我上传过的《Q3 销售数据.xlsx》做一份汇报 PPT","expect_any":["workspace_read","workspace_search","workspace_list"],"forbid":["video_generate"]}
 {"id":"ws-ask-mode-read","category":"workspace","message":"我文件里的《合同模板.docx》付款条款是怎么写的？","expect_any":["workspace_read","workspace_search"],"forbid":["doc_generate","md_generate"]}
+{"id":"data-profile","category":"data","message":"看看我上传的《2026Q3 销售明细.xlsx》里都有哪些字段","expect_any":["data_profile","workspace_read"],"forbid":["sheet_generate","chart_generate"]}
+{"id":"data-agg","category":"data","message":"用《2026Q3 销售明细.xlsx》算一下各区域的销售总额，按从高到低排","expect_any":["data_profile","data_query"],"forbid":["sheet_generate","chart_generate"]}
+{"id":"data-chart","category":"data","message":"根据《订单.csv》画一张每月订单量的折线图","expect_any":["data_profile","data_query"],"forbid":["chart_generate","image_prompt"]}
+{"id":"data-report","category":"data","message":"分析《2026Q3 销售明细.xlsx》，写一份带图表的销售分析报告","expect_any":["data_profile","data_query","propose_plan"],"forbid":["chart_generate","video_generate"]}
+{"id":"data-csv-convert","category":"data","message":"把《预算.xlsx》每个 sheet 都导出成 csv 文件","expect_any":["workspace_organize","workspace_list","workspace_search"],"forbid":["sheet_generate"]}
+{"id":"chart-no-file","category":"chart","message":"随便画个柱状图示意一下三家公司的市场份额：A 50%，B 30%，C 20%","expect":["chart_generate"],"forbid":["data_query","data_profile"]}
