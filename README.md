@@ -54,7 +54,7 @@ WaLiOffice 将 AI Agent 能力与办公文档生成深度结合：用户在对�
 | 文档渲染 | docx-rs + rust_xlsxwriter | 纯 Rust 实现，无外部依赖 |
 | 认证 | JWT + bcrypt | 无状态认证 |
 | 静态资源 | rust-embed | 编译时嵌入前端产物 |
-| 部署 | Docker / 单一二进制 | 多阶段构建，镜像 < 50MB |
+| 部署 | Docker / 单一二进制 | 多阶段构建；release 二进制约 69MB（内嵌前端与 DataFusion） |
 
 ## 📐 架构概览
 
@@ -271,7 +271,7 @@ Dockerfile 采用三阶段构建：
 2. **Stage 2 — Rust 构建**：`rust:1.88-bookworm`，cargo build --release（使用 USTC crates 镜像加速）
 3. **Stage 3 — 运行时**：`ubuntu:22.04`，仅包含二进制 + ffmpeg + 最小依赖
 
-最终镜像约 50MB，启动即用。
+运行时镜像基于 `ubuntu:22.04` 并安装 ffmpeg，其中 walioffice 二进制（release，内嵌前端与 DataFusion 数据引擎）约 69MB，启动即用。release 构建（LTO + 单 codegen unit）首次约需 8–9 分钟。
 
 ## ⚙️ 环境变量参考
 
