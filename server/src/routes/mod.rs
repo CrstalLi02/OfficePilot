@@ -9,6 +9,7 @@ pub mod health;
 pub mod notification;
 pub mod project;
 pub mod session;
+pub mod workspace;
 pub mod settings;
 
 use axum::Router;
@@ -38,6 +39,7 @@ pub fn build_router() -> Router {
         .merge(dashboard::router())
         .merge(doc_export::router())
         .merge(health::router())
+        .merge(workspace::router())
         .nest_service(
             "/outputs",
             ServeDir::new(crate::config::config().render_output_dir.clone()),

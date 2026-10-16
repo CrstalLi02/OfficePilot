@@ -384,6 +384,22 @@ async fn chat_stream(
     let project_id = req.project_id.clone();
     let user_message = build_user_message(&req);
 
+    // 工作区概览 + 本轮 @ 引用的文件（Ask 模式也需要：只读工具可用）
+    let workspace_note = {
+        let overview = crate::workspace::overview(&pool, &user.0.id).await.unwrap_or_else(|e| {
+            tracing::warn!("[Workspace] 生成概览失败: {e:?}");
+            String::new()
+        });
+        let refs = match req.file_refs.as_deref().filter(|ids| !ids.is_empty()) {
+            Some(ids) => match crate::workspace::Tree::load(&pool, &user.0.id).await {
+                Ok(tree) => crate::workspace::referenced_files_note(&tree, ids),
+                Err(_) => String::new(),
+            },
+            None => String::new(),
+        };
+        [overview, refs].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
+    };
+
     let (start, agent_config) = match resumed {
         Some((run, decision)) => {
             let mut conversation = run.conversation;
@@ -422,7 +438,7 @@ async fn chat_stream(
             AgentConfig {
                 max_turns: 10,
                 // 附上会话产物清单，模型才能把"第三页""那份周报"对应到具体产物并局部修改
-                system_prompt: [system_prompt, crate::agent::artifact_ops::manifest(&existing_artifacts)]
+                system_prompt: [system_prompt, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
                     .into_iter()
                     .filter(|part| !part.is_empty())
                     .collect::<Vec<_>>()

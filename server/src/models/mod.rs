@@ -139,6 +139,9 @@ pub struct ChatRequest {
     /// 工作模式：craft（默认，直接执行）/ plan（先确认计划）/ ask（只问答）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<crate::agent::plan::AgentMode>,
+    /// 用户在输入框 @ 引用的工作区文件 id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_refs: Option<Vec<String>>,
     /// 对 Plan 模式下待确认计划的决定；带上它表示恢复那次运行
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<crate::agent::plan::PlanDecision>,

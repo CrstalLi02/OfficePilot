@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Ban, Check, Clapperboard, FileEdit, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Sheet, Wrench } from 'lucide-react'
+import { AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Undo2, Wrench } from 'lucide-react'
+import { workspaceApi } from '@/api'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
 
 export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> = {
@@ -15,6 +16,12 @@ export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> =
   video_batch_generate: { label: '批量生成视频', icon: Clapperboard },
   video_storyboard: { label: '规划视频分镜', icon: Clapperboard },
   web_search: { label: '联网搜索', icon: Globe },
+  artifact_edit: { label: '局部修改产物', icon: FilePen },
+  workspace_list: { label: '查看文件', icon: FolderOpen },
+  workspace_search: { label: '搜索文件', icon: FileSearch },
+  workspace_read: { label: '读取文件', icon: FileSearch },
+  workspace_write: { label: '保存到文件', icon: Save },
+  workspace_organize: { label: '整理文件', icon: FolderTree },
 }
 
 function formatDuration(ms: number) {
@@ -41,6 +48,37 @@ function StatusIcon({ status }: { status: ToolRun['status'] }) {
   }
 }
 
+/** 工作区写入 / 整理的撤销按钮 */
+function UndoButton({ opId }: { opId: string }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle')
+  const [note, setNote] = useState('')
+  const undo = async () => {
+    setState('busy')
+    try {
+      const { data } = await workspaceApi.undo(opId)
+      setState('done')
+      setNote(data.skipped.length ? `已撤销，${data.skipped.length} 项已变动未恢复` : '已撤销')
+    } catch (err: any) {
+      setState('error')
+      setNote(err?.response?.data?.detail || '撤销失败')
+    }
+  }
+  if (state === 'done' || state === 'error') {
+    return <span className={`text-[11px] ${state === 'error' ? 'text-red-600' : 'text-surface-400'}`}>{note}</span>
+  }
+  return (
+    <button
+      type="button"
+      onClick={undo}
+      disabled={state === 'busy'}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-surface-500 hover:bg-surface-100 hover:text-surface-900 disabled:opacity-50"
+    >
+      {state === 'busy' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}
+      撤销
+    </button>
+  )
+}
+
 function ToolCard({ run, now }: { run: ToolRun; now: number }) {
   const meta = TOOL_META[run.tool] || { label: run.tool, icon: Wrench }
   const Icon = meta.icon
@@ -50,6 +88,7 @@ function ToolCard({ run, now }: { run: ToolRun; now: number }) {
     run.status === 'error' ? run.error :
     run.status === 'cancelled' ? '已停止' :
     run.status === 'pending' ? '正在准备参数…' :
+    run.status === 'success' && run.summary ? run.summary :
     run.progress
 
   return (
@@ -68,9 +107,14 @@ function ToolCard({ run, now }: { run: ToolRun; now: number }) {
           <StatusIcon status={run.status} />
         </span>
       </div>
-      {detail && (
-        <div className={`mt-1 truncate text-[11px] ${run.status === 'error' ? 'text-red-600' : 'text-surface-500'}`} title={detail}>
-          {detail}
+      {(detail || run.opId) && (
+        <div className="mt-1 flex items-center gap-2">
+          {detail && (
+            <div className={`min-w-0 flex-1 truncate text-[11px] ${run.status === 'error' ? 'text-red-600' : 'text-surface-500'}`} title={detail}>
+              {detail}
+            </div>
+          )}
+          {run.opId && <span className="ml-auto shrink-0"><UndoButton opId={run.opId} /></span>}
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ pub mod video_batch_generate;
 pub mod video_generate;
 pub mod video_storyboard;
 pub mod web_search_generic;
+pub mod workspace_tools;
 
 use super::registry::REGISTRY;
 use std::sync::Arc;
@@ -53,6 +54,11 @@ pub async fn register_all_tools() {
     REGISTRY.register(Arc::new(web_search_generic::WebSearchTool)).await;
     REGISTRY.register(Arc::new(propose_plan::ProposePlanTool)).await;
     REGISTRY.register(Arc::new(artifact_edit::ArtifactEditTool)).await;
+    REGISTRY.register(Arc::new(workspace_tools::WorkspaceListTool)).await;
+    REGISTRY.register(Arc::new(workspace_tools::WorkspaceSearchTool)).await;
+    REGISTRY.register(Arc::new(workspace_tools::WorkspaceReadTool)).await;
+    REGISTRY.register(Arc::new(workspace_tools::WorkspaceWriteTool)).await;
+    REGISTRY.register(Arc::new(workspace_tools::WorkspaceOrganizeTool)).await;
 
     let tools = REGISTRY.list().await;
     tracing::info!(

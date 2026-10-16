@@ -16,6 +16,11 @@ use super::tool::{DynTool, ToolContext, ToolResult};
 use crate::llm::{ChatCompletionResponse, FunctionDef, LlmClient, StreamEvent, Usage};
 use crate::models::{Artifact, ChatAttachment, ChatMessage};
 
+/// 写回给模型的单个工具结果最大字符数（读文件类工具需要较大的空间）
+const MAX_TOOL_RESULT_CHARS: usize = 16_000;
+/// 工具结果中 data 字段超过这个长度时不回传给模型
+const MAX_TOOL_DATA_CHARS: usize = 2_000;
+
 /// 同一并发组内最多同时执行的工具数
 static MAX_PARALLEL_TOOLS: Lazy<usize> = Lazy::new(|| {
     std::env::var("AGENT_MAX_PARALLEL_TOOLS")
@@ -391,16 +396,18 @@ pub async fn run_agent_loop(
                     .iter()
                     .map(|a| serde_json::json!({ "id": a.id, "kind": a.kind, "title": a.title, "version": a.version }))
                     .collect();
+                // data 主要给前端用；体积大时不回传给模型，避免和 observation 重复占用上下文
+                let data = result.data.as_ref().filter(|d| d.to_string().len() <= MAX_TOOL_DATA_CHARS);
                 let tool_content = serde_json::to_string(&serde_json::json!({
                     "success": result.success,
-                    "data": result.data,
+                    "data": data,
                     "error": result.error,
                     "observation": result.observation,
                     "artifacts": produced,
                 }))
                 .unwrap_or_default()
                 .chars()
-                .take(4000)
+                .take(MAX_TOOL_RESULT_CHARS)
                 .collect::<String>();
                 conversation.push(ChatMessage {
                     role: "tool".to_string(),

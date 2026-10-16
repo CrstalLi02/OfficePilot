@@ -12,6 +12,7 @@ mod models;
 mod render;
 mod routes;
 mod state;
+mod workspace;
 
 use std::net::SocketAddr;
 use tracing::info;

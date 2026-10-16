@@ -43,3 +43,11 @@
 {"id":"attach-text-summarize","category":"attachment","message":"把这份文档总结成一页汇报PPT","attachments":[{"kind":"text","name":"weekly.md","text":"# 周报\n- 完成支付模块重构，接口耗时下降40%\n- 修复线上Bug 12个\n- 下周计划：灰度发布新版结算页，压测订单服务"}],"expect_any":["ppt_plan","ppt_generate"],"forbid":["video_generate"]}
 {"id":"attach-text-qa","category":"attachment","message":"这份文档里提到的接口耗时下降了多少？","attachments":[{"kind":"text","name":"weekly.md","text":"# 周报\n- 完成支付模块重构，接口耗时下降40%\n- 修复线上Bug 12个"}],"expect_no_tool":true}
 {"id":"ui-image-mode-text-first","category":"ui_mode","message":"先帮我写一段海报文案，再出图","tool_kind":"image","forbid":["video_generate"]}
+{"id":"ws-find","category":"workspace","message":"帮我找一下上个月的会议纪要在哪","expect_any":["workspace_search","workspace_list"],"forbid":["md_generate","doc_generate"]}
+{"id":"ws-list","category":"workspace","message":"我的文件里都有些什么？","expect_any":["workspace_list"],"forbid":["md_generate"]}
+{"id":"ws-read-summarize","category":"workspace","message":"读一下我文件里的《需求说明.docx》，总结成三点","expect_any":["workspace_read","workspace_search"],"forbid":["doc_generate","ppt_plan"]}
+{"id":"ws-organize","category":"workspace","message":"把根目录里所有的合同按客户名建文件夹归档","expect_any":["workspace_list","workspace_organize"],"forbid":["drawio_generate","md_generate"]}
+{"id":"ws-convert","category":"workspace","message":"把文件里的 Word 文档都转成 Markdown","expect_any":["workspace_list","workspace_search","workspace_organize"],"forbid":["md_generate","doc_generate"]}
+{"id":"ws-save-note","category":"workspace","message":"帮我在文件里新建一个“待办”文件夹，并写一份本周待办清单存进去","expect_any":["workspace_write","workspace_organize"],"forbid":["video_generate"]}
+{"id":"ws-ppt-from-file","category":"workspace","message":"根据我上传过的《Q3 销售数据.xlsx》做一份汇报 PPT","expect_any":["workspace_read","workspace_search","workspace_list"],"forbid":["video_generate"]}
+{"id":"ws-ask-mode-read","category":"workspace","message":"我文件里的《合同模板.docx》付款条款是怎么写的？","expect_any":["workspace_read","workspace_search"],"forbid":["doc_generate","md_generate"]}
