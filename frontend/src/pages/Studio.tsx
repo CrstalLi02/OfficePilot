@@ -3,7 +3,7 @@ import type React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePPTStore } from '@/stores/ppt-store'
-import { chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi } from '@/api'
+import { artifactApi, chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi } from '@/api'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ConversationTabs } from '@/components/chat/ConversationTabs'
 import { SlidePreview } from '@/components/preview/SlidePreview'
@@ -14,6 +14,7 @@ import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, 
 import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, ToolKind, ToolConfigMap } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
+import { contentFingerprint } from '@/lib/artifact-diff'
 const LOGO_URL = '/logo.png'
 
 type ToastTone = 'success' | 'error' | 'info'
@@ -1159,6 +1160,39 @@ export default function Studio() {
     }
   }
 
+  /** 用户手动修改产物（如 draw.io 编辑、在线表格）：先更新本地，停顿 1.5 秒后保存为新版本 */
+  const persistTimersRef = useRef<Record<string, number>>({})
+  const handleUpdateArtifact = (artifactId: string, updates: Partial<Artifact>) => {
+    const current = usePPTStore.getState().artifacts.find((item) => item.id === artifactId)
+    // 版本号以服务端为准，本地编辑不自增
+    updateArtifact(artifactId, { ...updates, version: current?.version })
+    if (!sessionId || !current || updates.content === undefined) return
+    if (contentFingerprint(updates.content) === contentFingerprint(current.content)) return
+    const targetSession = sessionId
+    window.clearTimeout(persistTimersRef.current[artifactId])
+    persistTimersRef.current[artifactId] = window.setTimeout(async () => {
+      const latest = usePPTStore.getState().artifacts.find((item) => item.id === artifactId)
+      if (!latest) return
+      try {
+        const { data } = await artifactApi.save(artifactId, targetSession, { content: latest.content, title: latest.title })
+        if (!data.unchanged) {
+          // 只更新版本信息，避免覆盖保存期间的新编辑
+          updateArtifact(artifactId, { version: data.artifact.version, change_summary: data.artifact.change_summary })
+        }
+      } catch (err) {
+        console.error('Save artifact error:', err)
+        showToast('产物修改保存失败，刷新后可能丢失', 'error')
+      }
+    }, 1500)
+  }
+
+  /** 版本恢复后替换为服务端返回的新版本 */
+  const handleArtifactReplaced = (artifact: Artifact) => {
+    upsertArtifact(artifact)
+    if (artifact.kind === 'ppt') applyPptArtifact(artifact)
+    showToast(artifact.change_summary ? `已${artifact.change_summary}` : '已恢复', 'success')
+  }
+
   const applyPptArtifact = (artifact: Artifact) => {
     applyRealtimePptState({
       project_id: artifact.content?.project_id,
@@ -2117,7 +2151,9 @@ export default function Studio() {
               activeArtifact={activeArtifact}
               artifacts={artifacts}
               onSelectArtifact={setActiveArtifact}
-              onUpdateArtifact={updateArtifact}
+              onUpdateArtifact={handleUpdateArtifact}
+              sessionId={sessionId}
+              onArtifactReplaced={handleArtifactReplaced}
               onExportExcel={handleExportExcel}
               onExportDocx={handleExportDocx}
               onExportMarkdown={handleExportMarkdown}
@@ -2148,7 +2184,9 @@ export default function Studio() {
               activeArtifact={activeArtifact}
               artifacts={artifacts}
               onSelectArtifact={setActiveArtifact}
-              onUpdateArtifact={updateArtifact}
+              onUpdateArtifact={handleUpdateArtifact}
+              sessionId={sessionId}
+              onArtifactReplaced={handleArtifactReplaced}
               onExportExcel={handleExportExcel}
               onExportDocx={handleExportDocx}
               onExportMarkdown={handleExportMarkdown}

@@ -141,6 +141,7 @@ impl OfficeTool for WebSearchTool {
                     artifacts: Some(vec![search_artifact]),
                     observation,
                     continue_loop: None,
+                    revision: None,
                 }
             }
             Err(err) => ToolResult::err(format!("联网检索失败: {err}")),

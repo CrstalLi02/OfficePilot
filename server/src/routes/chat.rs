@@ -14,7 +14,7 @@ use crate::agent::agent_loop::AgentStart;
 use crate::agent::plan::{AgentMode, Decision};
 use crate::agent::{run_agent_loop, AgentConfig, AgentEvent};
 use crate::auth::middleware::AuthUser;
-use crate::db::{agent_run_repo, file_repo, project_repo, session_repo, DbPool};
+use crate::db::{agent_run_repo, artifact_repo, file_repo, project_repo, session_repo, DbPool};
 use crate::error::AppError;
 use crate::models::{Artifact, ChatAttachment, ChatMessage, ChatRequest, PptProject};
 use crate::render;
@@ -117,6 +117,7 @@ fn build_summary_markdown_artifact(summary: &str, tool_kind: Option<&str>) -> Ar
         version: 1,
         created_at: now.clone(),
         updated_at: now,
+        change_summary: None,
     }
 }
 
@@ -838,7 +839,8 @@ async fn chat_stream(
 
     // 加载历史消息
     let history = session_repo::get_messages(&pool, &session_id, 50).await.unwrap_or_default();
-    let existing_artifacts = session_repo::get_artifacts(&pool, &session_id).await.unwrap_or_default();
+    // 读取失败必须报错：若当作空列表继续，本轮保存时会覆盖掉会话里已有的产物
+    let existing_artifacts = session_repo::get_artifacts(&pool, &session_id).await?;
 
     if let Some(attachments) = req.attachments.as_deref() {
         save_chat_attachments_to_files(&pool, &user.0.id, attachments).await;
@@ -923,7 +925,12 @@ async fn chat_stream(
             },
             AgentConfig {
                 max_turns: 10,
-                system_prompt,
+                // 附上会话产物清单，模型才能把"第三页""那份周报"对应到具体产物并局部修改
+                system_prompt: [system_prompt, crate::agent::artifact_ops::manifest(&existing_artifacts)]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
                 allowed_tools: allowed_tools.clone(),
                 mode,
             },
@@ -1060,8 +1067,24 @@ async fn chat_stream(
                     }).to_string()))
                 }
                 AgentEvent::Artifact { artifact } => {
+                    // 记录版本历史（AI 修订的版本号若被占用会顺延）
+                    let mut artifact = artifact.clone();
+                    if let Err(e) = artifact_repo::assign_next_version(&pool_for_save, &mut artifact).await {
+                        tracing::warn!("[Artifact] 分配版本号失败: {e:?}");
+                    }
+                    if let Err(e) = artifact_repo::record_version(
+                        &pool_for_save,
+                        &session_id_for_save,
+                        &artifact,
+                        artifact_repo::AUTHOR_AGENT,
+                    )
+                    .await
+                    {
+                        tracing::warn!("[Artifact] 记录版本失败: {e:?}");
+                    }
+                    let artifact = &artifact;
                     collected_artifacts.push(artifact.clone());
-                    if saved_artifact_ids.insert(artifact.id.clone()) {
+                    if saved_artifact_ids.insert(format!("{}@{}", artifact.id, artifact.version)) {
                         save_generated_artifact_to_files(
                             &pool_for_save,
                             &user_id_for_save,
@@ -1110,7 +1133,7 @@ async fn chat_stream(
                         collected_artifacts.clone(),
                     );
                     for artifact in &collected_artifacts {
-                        if saved_artifact_ids.insert(artifact.id.clone()) {
+                        if saved_artifact_ids.insert(format!("{}@{}", artifact.id, artifact.version)) {
                             save_generated_artifact_to_files(
                                 &pool_for_save,
                                 &user_id_for_save,
@@ -1124,11 +1147,14 @@ async fn chat_stream(
                         &session_id_for_save,
                         &summary.chars().take(240).collect::<String>(),
                     ).await;
-                    let _ = session_repo::save_artifacts(
-                        &pool_for_save,
-                        &session_id_for_save,
-                        &session_artifacts,
-                    ).await;
+                    // 本轮没有新产物时不改写会话产物，避免用过期快照覆盖
+                    if !collected_artifacts.is_empty() {
+                        let _ = session_repo::save_artifacts(
+                            &pool_for_save,
+                            &session_id_for_save,
+                            &session_artifacts,
+                        ).await;
+                    }
                     Some(Event::default().event("done").data(serde_json::json!({
                         "session_id": session_id_for_save,
                         "summary": summary,

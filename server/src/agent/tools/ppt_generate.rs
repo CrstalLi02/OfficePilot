@@ -11,7 +11,7 @@ use crate::models::{ChatMessage, PptProject, Slide, SlideElement};
 pub struct PptGenerateTool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SlidePlan {
+pub(crate) struct SlidePlan {
     title: String,
     #[serde(default)]
     layout: Option<String>,
@@ -164,7 +164,7 @@ fn get_theme_palettes(theme: &str) -> Vec<Palette> {
     }
 }
 
-fn plan_to_slide(
+pub(crate) fn plan_to_slide(
     project_title: &str,
     plan: &SlidePlan,
     index: usize,

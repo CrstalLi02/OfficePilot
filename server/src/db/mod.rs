@@ -1,4 +1,5 @@
 pub mod agent_run_repo;
+pub mod artifact_repo;
 pub mod file_repo;
 pub mod notification_repo;
 pub mod project_repo;
@@ -81,6 +82,9 @@ async fn run_migrations_sqlite(pool: &sqlx::SqlitePool) -> Result<()> {
     sqlx::raw_sql(include_str!("../../../migrations/002_agent_runs.sql"))
         .execute(pool)
         .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/003_artifact_versions.sql"))
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -103,6 +107,9 @@ async fn run_migrations_mysql(pool: &sqlx::MySqlPool) -> Result<()> {
 
     // 增量迁移（幂等）
     sqlx::raw_sql(include_str!("../../../migrations/002_agent_runs_mysql.sql"))
+        .execute(pool)
+        .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/003_artifact_versions_mysql.sql"))
         .execute(pool)
         .await?;
     Ok(())

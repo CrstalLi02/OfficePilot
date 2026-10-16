@@ -164,19 +164,19 @@ impl OfficeTool for VideoStoryboardTool {
         }
 
         if images.is_empty() {
-            images.extend(extract_image_urls_from_artifacts(&ctx.prior_artifacts));
+            images.extend(extract_image_urls_from_artifacts(&ctx.artifacts()));
         }
 
         let image_count = images.len();
 
         // ---- 收集音频和视频参考 ----
-        let audio_urls = collect_video_audios(&input, &ctx.prior_artifacts);
-        let video_refs = collect_video_refs(&input, &ctx.prior_artifacts);
+        let audio_urls = collect_video_audios(&input, &ctx.artifacts());
+        let video_refs = collect_video_refs(&input, &ctx.artifacts());
         let video_ref_urls: Vec<String> = video_refs.iter().map(|v| v.url.clone()).collect();
 
         // 如果输入未显式提供视频参考，从历史产物中提取
         let video_ref_urls = if video_ref_urls.is_empty() {
-            extract_video_urls_from_artifacts(&ctx.prior_artifacts)
+            extract_video_urls_from_artifacts(&ctx.artifacts())
         } else {
             video_ref_urls
         };
@@ -284,7 +284,7 @@ impl OfficeTool for VideoStoryboardTool {
         };
 
         // ---- 提取历史产物中的文字内容作为视频文案素材 ----
-        let text_refs = extract_text_content_from_artifacts(&ctx.prior_artifacts);
+        let text_refs = extract_text_content_from_artifacts(&ctx.artifacts());
         let reference_text = if text_refs.is_empty() {
             "无参考文档。".to_string()
         } else {

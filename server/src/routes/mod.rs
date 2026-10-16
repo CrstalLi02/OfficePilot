@@ -1,3 +1,4 @@
+pub mod artifact;
 pub mod auth;
 pub mod chat;
 pub mod dashboard;
@@ -26,6 +27,7 @@ pub fn build_router() -> Router {
         .quality(tower_http::CompressionLevel::Default);
 
     Router::new()
+        .merge(artifact::router())
         .merge(auth::router())
         .merge(chat::router())
         .merge(session::router())

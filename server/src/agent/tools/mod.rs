@@ -1,4 +1,5 @@
 pub mod agnes_media;
+pub mod artifact_edit;
 pub mod chart_generate;
 pub mod doc_generate;
 pub mod drawio_generate;
@@ -51,6 +52,7 @@ pub async fn register_all_tools() {
         .await;
     REGISTRY.register(Arc::new(web_search_generic::WebSearchTool)).await;
     REGISTRY.register(Arc::new(propose_plan::ProposePlanTool)).await;
+    REGISTRY.register(Arc::new(artifact_edit::ArtifactEditTool)).await;
 
     let tools = REGISTRY.list().await;
     tracing::info!(

@@ -385,11 +385,18 @@ pub async fn run_agent_loop(
             let timeout = Duration::from_millis(crate::config::config().llm_tool_timeout_ms);
             for outcome in execute_calls(calls, &ctx, &tx, &cancel, timeout).await {
                 let result = outcome.result;
+                // 告诉模型产物 id，后续步骤（批量生成、局部编辑）可以引用
+                let produced: Vec<serde_json::Value> = outcome
+                    .artifacts
+                    .iter()
+                    .map(|a| serde_json::json!({ "id": a.id, "kind": a.kind, "title": a.title, "version": a.version }))
+                    .collect();
                 let tool_content = serde_json::to_string(&serde_json::json!({
                     "success": result.success,
                     "data": result.data,
                     "error": result.error,
                     "observation": result.observation,
+                    "artifacts": produced,
                 }))
                 .unwrap_or_default()
                 .chars()
@@ -691,7 +698,24 @@ async fn run_one(
                 version: 1,
                 created_at: now.clone(),
                 updated_at: now,
+                change_summary: None,
             };
+            ctx.upsert_artifact(artifact.clone());
+            let _ = tx.send(AgentEvent::Artifact {
+                artifact: artifact.clone(),
+            });
+            artifacts.push(artifact);
+        }
+        if let Some(revision) = result.revision.clone() {
+            // 修订已有产物：保留 id，版本号 +1（落库时若与已有版本冲突会再顺延）
+            let mut artifact = revision.base;
+            artifact.version += 1;
+            artifact.title = revision.title;
+            artifact.content = revision.content;
+            artifact.change_summary = Some(revision.change_summary);
+            artifact.status = "ready".to_string();
+            artifact.updated_at = chrono::Utc::now().to_rfc3339();
+            ctx.upsert_artifact(artifact.clone());
             let _ = tx.send(AgentEvent::Artifact {
                 artifact: artifact.clone(),
             });

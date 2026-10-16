@@ -79,6 +79,8 @@ export interface Artifact {
   version: number;
   created_at: string;
   updated_at: string;
+  /** 这个版本改了什么（AI 编辑、用户修改、恢复） */
+  change_summary?: string | null;
 }
 
 export interface ToolConfigOption {

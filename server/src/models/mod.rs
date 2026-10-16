@@ -225,4 +225,7 @@ pub struct Artifact {
     pub version: i32,
     pub created_at: String,
     pub updated_at: String,
+    /// 这个版本改了什么（AI 编辑、用户修改、恢复时填写）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_summary: Option<String>,
 }

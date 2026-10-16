@@ -147,6 +147,27 @@ export const notificationApi = {
   delete: (id: string) => api.delete(`/notifications/${id}`),
 };
 
+// ===== 产物版本 API =====
+export interface ArtifactVersionMeta {
+  version: number;
+  title: string;
+  change_summary?: string | null;
+  author: 'agent' | 'user' | string;
+  created_at: string;
+}
+
+export const artifactApi = {
+  versions: (artifactId: string, sessionId: string) =>
+    api.get<{ current_version: number; versions: ArtifactVersionMeta[] }>(`/artifacts/${artifactId}/versions`, { params: { session_id: sessionId } }),
+  version: (artifactId: string, version: number, sessionId: string) =>
+    api.get<{ artifact: Artifact }>(`/artifacts/${artifactId}/versions/${version}`, { params: { session_id: sessionId } }),
+  restore: (artifactId: string, sessionId: string, version: number) =>
+    api.post<{ artifact: Artifact }>(`/artifacts/${artifactId}/restore`, { session_id: sessionId, version }),
+  /** 保存用户手动修改，生成新版本 */
+  save: (artifactId: string, sessionId: string, payload: { content: any; title?: string; change_summary?: string }) =>
+    api.put<{ artifact: Artifact; unchanged?: boolean }>(`/artifacts/${artifactId}`, { session_id: sessionId, ...payload }),
+};
+
 // ===== 对话 API (SSE) =====
 export const chatApi = {
   /** 停止某个会话正在运行的 Agent（后端会中断 LLM 与工具，并保存已生成的产物） */

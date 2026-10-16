@@ -9,7 +9,7 @@ use crate::models::ChatMessage;
 pub struct DocGenerateTool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct DocSection {
+pub(crate) struct DocSection {
     heading: String,
     #[serde(default = "default_heading_level")]
     heading_level: u32,
@@ -26,13 +26,13 @@ fn default_heading_level() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct DocTable {
+pub(crate) struct DocTable {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct DocOutput {
+pub(crate) struct DocOutput {
     title: String,
     sections: Vec<DocSection>,
     #[serde(default)]
@@ -289,7 +289,7 @@ impl OfficeTool for DocGenerateTool {
     }
 }
 
-pub fn sections_to_markdown(doc: &DocOutput) -> String {
+pub(crate) fn sections_to_markdown(doc: &DocOutput) -> String {
     let mut md = format!("# {}\n\n", doc.title);
     for section in &doc.sections {
         let prefix = "#".repeat(section.heading_level.min(6) as usize);
