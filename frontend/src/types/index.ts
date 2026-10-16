@@ -34,6 +34,21 @@ export interface InputRef {
   fileId?: string;
 }
 
+/** 技能（Agent Skills） */
+export interface SkillSummary {
+  name: string;
+  description: string;
+  source: 'builtin' | 'user';
+  enabled: boolean;
+  category?: string | null;
+  icon?: string | null;
+  user_invocable: boolean;
+  disable_model_invocation: boolean;
+  files: string[];
+  /** 详情接口才返回 */
+  skill_md?: string;
+}
+
 /** 工作区文件（/api/files 返回） */
 export interface WorkspaceFile {
   id: string;

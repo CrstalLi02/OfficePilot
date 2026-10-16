@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth-store';
-import type { TokenResponse, ToolKind, Artifact, PersistedSession, AppSettings, MCPServiceConfig, ChatAttachment, AgentMode, PlanDecisionPayload } from '@/types';
+import type { TokenResponse, ToolKind, Artifact, PersistedSession, AppSettings, MCPServiceConfig, ChatAttachment, AgentMode, PlanDecisionPayload, SkillSummary } from '@/types';
 
 const API_BASE = '/api';
 
@@ -147,6 +147,24 @@ export const notificationApi = {
   delete: (id: string) => api.delete(`/notifications/${id}`),
 };
 
+// ===== 技能 API =====
+export const skillsApi = {
+  list: () => api.get<{ skills: SkillSummary[] }>('/skills'),
+  detail: (name: string) => api.get<SkillSummary>(`/skills/${name}`),
+  setEnabled: (name: string, enabled: boolean) => api.post(`/skills/${name}/enabled`, { enabled }),
+  /** 上传 .zip 或 SKILL.md */
+  importFile: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<{ name: string; description: string }>('/skills/import', formData);
+  },
+  /** 用 SKILL.md 文本创建（同名用户技能会被覆盖） */
+  create: (skillMd: string) => api.post<{ name: string; description: string }>('/skills', { skill_md: skillMd }),
+  remove: (name: string) => api.delete(`/skills/${name}`),
+  /** 从会话生成技能草稿（不保存） */
+  draft: (sessionId: string, hint?: string) => api.post<{ skill_md: string; error?: string | null }>('/skills/draft', { session_id: sessionId, hint }),
+};
+
 // ===== 工作区操作 API =====
 export const workspaceApi = {
   /** 撤销 Agent 的一次写入 / 整理 */
@@ -190,7 +208,7 @@ export const chatApi = {
     token: string,
     signal?: AbortSignal,
     toolConfig?: Record<string, any>,
-    options?: { mode?: AgentMode; resume?: PlanDecisionPayload; fileRefs?: string[] }
+    options?: { mode?: AgentMode; resume?: PlanDecisionPayload; fileRefs?: string[]; skills?: string[] }
   ) => {
     const response = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
@@ -210,6 +228,7 @@ export const chatApi = {
         mode: options?.mode,
         resume: options?.resume,
         file_refs: options?.fileRefs?.length ? options.fileRefs : undefined,
+        skills: options?.skills?.length ? options.skills : undefined,
       }),
       signal,
     });

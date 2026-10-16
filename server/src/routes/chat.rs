@@ -400,6 +400,26 @@ async fn chat_stream(
         [overview, refs].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
     };
 
+    // 技能：清单（名称 + 简介）+ 用户显式选择的技能正文；显式技能声明了本系统的工具时缩小工具范围
+    let all_skills = crate::skills::load_all(&pool, &user.0.id).await.unwrap_or_else(|e| {
+        tracing::warn!("[Skills] 加载失败: {e:?}");
+        Vec::new()
+    });
+    let selected_names: Vec<String> = req.skills.clone().unwrap_or_default();
+    let skill_note = [crate::skills::listing(&all_skills), crate::skills::preload(&all_skills, &selected_names)]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let allowed_tools = {
+        let selected: Vec<&crate::skills::Skill> = all_skills
+            .iter()
+            .filter(|s| s.enabled && selected_names.contains(&s.meta.name))
+            .collect();
+        let known: Vec<String> = crate::agent::registry::REGISTRY.list().await.iter().map(|t| t.name().to_string()).collect();
+        crate::skills::narrow_tools(&selected, &known, allowed_tools)
+    };
+
     let (start, agent_config) = match resumed {
         Some((run, decision)) => {
             let mut conversation = run.conversation;
@@ -438,7 +458,7 @@ async fn chat_stream(
             AgentConfig {
                 max_turns: 10,
                 // 附上会话产物清单，模型才能把"第三页""那份周报"对应到具体产物并局部修改
-                system_prompt: [system_prompt, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
+                system_prompt: [system_prompt, skill_note, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
                     .into_iter()
                     .filter(|part| !part.is_empty())
                     .collect::<Vec<_>>()

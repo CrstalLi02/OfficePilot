@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, Undo2, Wrench } from 'lucide-react'
+import { AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
 import { workspaceApi } from '@/api'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
 
@@ -17,6 +17,8 @@ export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> =
   video_storyboard: { label: '规划视频分镜', icon: Clapperboard },
   web_search: { label: '联网搜索', icon: Globe },
   artifact_edit: { label: '局部修改产物', icon: FilePen },
+  use_skill: { label: '使用技能', icon: BookOpen },
+  read_skill_file: { label: '读取技能资料', icon: BookOpen },
   data_profile: { label: '查看数据结构', icon: Table2 },
   data_query: { label: '数据查询', icon: Database },
   workspace_list: { label: '查看文件', icon: FolderOpen },

@@ -12,6 +12,7 @@ mod llm;
 mod models;
 mod render;
 mod routes;
+mod skills;
 mod state;
 mod workspace;
 

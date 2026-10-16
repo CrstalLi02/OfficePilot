@@ -21,6 +21,8 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release 2>/d
 # 复制源码
 COPY server/src ./src
 COPY migrations ../migrations
+# 内置技能（rust-embed 在编译时读取）
+COPY skills ../skills
 # 复制前端构建产物（rust-embed 在编译时读取）
 COPY --from=frontend /fe/dist ../frontend/dist
 RUN touch src/main.rs && cargo build --release
