@@ -67,7 +67,7 @@ impl OfficeTool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        "联网检索网页信息：根据关键词搜索互联网公开网页，返回标题、链接和摘要。"
+        "联网搜索公开网页，返回标题、链接和摘要。用于最新新闻、政策法规、官网信息、实时数据等模型知识可能过时的问题；可以先搜索，再把结果整理进文档、PPT 等产物。"
     }
 
     fn parameters(&self) -> serde_json::Value {

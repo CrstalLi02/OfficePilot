@@ -10,9 +10,11 @@ use std::time::Duration;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::{run_agent_loop, AgentConfig, AgentEvent, IntentAnalyzer};
+use crate::agent::agent_loop::AgentStart;
+use crate::agent::plan::{AgentMode, Decision};
+use crate::agent::{run_agent_loop, AgentConfig, AgentEvent};
 use crate::auth::middleware::AuthUser;
-use crate::db::{file_repo, project_repo, session_repo, DbPool};
+use crate::db::{agent_run_repo, file_repo, project_repo, session_repo, DbPool};
 use crate::error::AppError;
 use crate::models::{Artifact, ChatAttachment, ChatMessage, ChatRequest, PptProject};
 use crate::render;
@@ -241,152 +243,12 @@ pub fn build_user_message(req: &ChatRequest) -> String {
 fn allowed_tools_for_kind(tool_kind: Option<&str>) -> Option<Vec<String>> {
     match tool_kind {
         Some("image") => Some(vec!["image_prompt".to_string()]),
-        Some("video") => Some(vec!["video_generate".to_string(), "video_storyboard".to_string()]),
+        Some("video") => Some(vec![
+            "video_generate".to_string(),
+            "video_storyboard".to_string(),
+            "video_batch_generate".to_string(),
+        ]),
         _ => None,
-    }
-}
-
-/// 全局意图分析器（按会话隔离上下文）
-static INTENT_ANALYZER: std::sync::OnceLock<std::sync::Mutex<IntentAnalyzer>> = std::sync::OnceLock::new();
-
-fn intent_analyzer() -> &'static std::sync::Mutex<IntentAnalyzer> {
-    INTENT_ANALYZER.get_or_init(|| std::sync::Mutex::new(IntentAnalyzer::new()))
-}
-
-fn contains_any(text: &str, keywords: &[&str]) -> bool {
-    keywords.iter().any(|keyword| text.contains(keyword))
-}
-
-fn has_image_attachment(req: &ChatRequest) -> bool {
-    req.attachments
-        .as_deref()
-        .map(|items| items.iter().any(|item| item.kind == "image"))
-        .unwrap_or(false)
-}
-
-fn infer_media_tool_kind(req: &ChatRequest) -> Option<String> {
-    match req.tool_kind.as_deref() {
-        Some("image") | Some("video") => return req.tool_kind.clone(),
-        _ => {}
-    }
-
-    if !has_image_attachment(req) {
-        return None;
-    }
-
-    let text = req.message.trim().to_lowercase();
-
-    // 文本优先意图排除：当用户明确要求"先写/构思/规划/出方案"时，
-    // 当前意图是文本/文档生成，不应直接跳到媒体工具
-    let text_first_patterns = [
-        "先帮我写",
-        "帮我写",
-        "先写",
-        "帮我构思",
-        "帮我规划",
-        "先出",
-        "帮我出",
-        "写提示词",
-        "出提示词",
-        "写prompt",
-        "写脚本",
-        "先规划",
-        "先想",
-        "帮我想想",
-        "帮我设计",
-        "先做个方案",
-        "出个方案",
-        "写个方案",
-        "帮我写个",
-        "先构思",
-    ];
-    let has_text_first_intent = text_first_patterns
-        .iter()
-        .any(|p| text.contains(p));
-    if has_text_first_intent {
-        return None; // 交给 LLM 自由选择工具
-    }
-
-    if contains_any(
-        &text,
-        &[
-            "生成视频",
-            "做视频",
-            "制作视频",
-            "图生视频",
-            "以图生视频",
-            "短视频",
-            "短片",
-            "宣传片",
-            "动画",
-            "动起来",
-            "动态化",
-            "动态海报",
-            "motion",
-            "video",
-        ],
-    ) {
-        return Some("video".to_string());
-    }
-
-    let image_intent = contains_any(
-        &text,
-        &[
-            "生成图片",
-            "做图片",
-            "画图",
-            "出图",
-            "图生图",
-            "以图生图",
-            "改图",
-            "修图",
-            "重绘",
-            "换风格",
-            "换背景",
-            "换衣服",
-            "换装",
-            "变装",
-            "换发型",
-            "去除背景",
-            "抠图",
-            "扩图",
-            "其他穿着",
-            "穿着",
-            "衣服",
-            "服装",
-            "造型",
-            "换成",
-            "改成",
-            "海报",
-            "封面",
-            "配图",
-            "主视觉",
-            "插画",
-            "banner",
-            "视觉稿",
-        ],
-    );
-    let reference_image_cue = contains_any(
-        &text,
-        &[
-            "基于图片",
-            "基于这张图",
-            "基于这个图",
-            "基于照片",
-            "参考图片",
-            "参考这张图",
-            "用这张图",
-            "按照这张图",
-            "上传图片",
-            "这张图片",
-            "这张照片",
-        ],
-    );
-
-    if image_intent || (reference_image_cue && !text.is_empty()) {
-        Some("image".to_string())
-    } else {
-        None
     }
 }
 
@@ -909,58 +771,22 @@ async fn save_generated_artifact_to_files(pool: &DbPool, owner_id: &str, artifac
 /// 一次请求的工具路由结果：决定本轮暴露给 LLM 的工具和追加的系统提示词
 pub struct Routing {
     pub resolved_tool_kind: Option<String>,
+    pub mode: AgentMode,
     /// 追加到 OFFICE_AGENT_PROMPT 之后的内容（空串表示不追加）
     pub system_prompt: String,
     pub allowed_tools: Option<Vec<String>>,
 }
 
-/// 路由决策（chat_stream 与离线评测共用，保证评测的就是线上逻辑）
+/// 路由决策（chat_stream 与离线评测共用，保证评测的就是线上逻辑）。
+/// 不再做关键词意图识别：工具选择交给模型，只有用户在界面上显式选择的
+/// 图片/视频模式和工作模式（Craft/Plan/Ask）会约束可用工具。
 pub fn resolve_routing(req: &ChatRequest) -> Routing {
-    let has_image = has_image_attachment(req);
-    let intent_result = {
-        let mut analyzer = intent_analyzer().lock().unwrap();
-        analyzer.analyze(&req.message, &req.session_id.clone().unwrap_or_default(), has_image)
-    };
-    tracing::info!(
-        "[Intent] session={} intent={:?} confidence={:.2} source={:?} temporal={:?}",
-        req.session_id.as_deref().unwrap_or("-"),
-        intent_result.intent,
-        intent_result.confidence,
-        intent_result.source,
-        intent_result.temporal_order,
-    );
-
-    // 优先用意图识别结果，前端 tool_kind 作为 fallback
-    let resolved_tool_kind = if intent_result.confidence >= 0.5 {
-        // 意图识别置信度足够时，用意图结果决定 allowed_tools
-        match intent_result.intent {
-            crate::agent::intent::IntentType::Image => Some("image".to_string()),
-            crate::agent::intent::IntentType::Video => Some("video".to_string()),
-            _ => req.tool_kind.clone(), // 其他意图交给前端 tool_kind 或 None
-        }
-    } else {
-        // 低置信度时 fallback 到旧逻辑
-        infer_media_tool_kind(req).or_else(|| req.tool_kind.clone())
-    };
-
-    // 构建意图上下文注入
-    let intent_addition = {
-        let analyzer = intent_analyzer().lock().unwrap();
-        analyzer.build_intent_context_addition(&intent_result)
-    };
-
-    // 用意图识别结果决定 allowed_tools
-    let allowed_tools = if intent_result.confidence >= 0.5 {
-        let analyzer = intent_analyzer().lock().unwrap();
-        analyzer.allowed_tools_for_intent(&intent_result)
-    } else {
-        allowed_tools_for_kind(resolved_tool_kind.as_deref())
-    };
-
+    let mode = req.mode.unwrap_or_default();
     Routing {
-        resolved_tool_kind,
-        system_prompt: intent_addition,
-        allowed_tools,
+        resolved_tool_kind: req.tool_kind.clone(),
+        mode,
+        system_prompt: mode.prompt().to_string(),
+        allowed_tools: allowed_tools_for_kind(req.tool_kind.as_deref()),
     }
 }
 
@@ -972,9 +798,13 @@ async fn chat_stream(
 
     let Routing {
         resolved_tool_kind,
+        mode,
         system_prompt,
         allowed_tools,
     } = resolve_routing(&req);
+    if req.resume.is_some() && req.session_id.is_none() {
+        return Err(AppError::BadRequest("确认计划需要指定会话".into()));
+    }
 
     let client = std::sync::Arc::new(crate::llm::LlmClient::for_user(
         &user.0.id,
@@ -1014,10 +844,35 @@ async fn chat_stream(
         save_chat_attachments_to_files(&pool, &user.0.id, attachments).await;
     }
 
+    // 计划确认：校验并锁定那次等待中的运行（重复提交会被拒绝）
+    let resumed = match req.resume.as_ref() {
+        Some(decision) => {
+            let run = agent_run_repo::find(&pool, &decision.run_id)
+                .await?
+                .ok_or(AppError::NotFound("计划不存在或已过期".into()))?;
+            if run.owner_id != user.0.id || run.session_id != session_id {
+                return Err(AppError::Forbidden);
+            }
+            let status = match decision.decision {
+                Decision::Approve => "approved",
+                Decision::Revise => "revised",
+                Decision::Reject => "rejected",
+            };
+            if !agent_run_repo::resolve(&pool, &run.id, status).await? {
+                return Err(AppError::BadRequest("这个计划已经处理过了".into()));
+            }
+            Some((run, decision.clone()))
+        }
+        None => None,
+    };
+
     // 保存用户消息
     let user_msg = ChatMessage {
         role: "user".into(),
-        content: req.message.clone(),
+        content: resumed
+            .as_ref()
+            .map(|(_, decision)| decision.user_message())
+            .unwrap_or_else(|| req.message.clone()),
         tool_calls: None,
         tool_call_id: None,
     };
@@ -1031,10 +886,48 @@ async fn chat_stream(
     let project_id = req.project_id.clone();
     let user_message = build_user_message(&req);
 
-    let agent_config = AgentConfig {
-        max_turns: 10,
-        system_prompt,
-        allowed_tools,
+    let (start, agent_config) = match resumed {
+        Some((run, decision)) => {
+            let mut conversation = run.conversation;
+            conversation.push(ChatMessage {
+                role: "tool".into(),
+                content: decision.tool_result(&run.plan),
+                tool_calls: None,
+                tool_call_id: Some(run.plan_call_id.clone()),
+            });
+            for call_id in &run.other_call_ids {
+                conversation.push(ChatMessage {
+                    role: "tool".into(),
+                    content: r#"{"success":false,"error":"等待计划确认，未执行"}"#.into(),
+                    tool_calls: None,
+                    tool_call_id: Some(call_id.clone()),
+                });
+            }
+            (
+                AgentStart::Resume {
+                    conversation,
+                    plan_steps: decision.effective_steps(&run.plan),
+                },
+                AgentConfig {
+                    max_turns: 10,
+                    system_prompt: String::new(),
+                    allowed_tools: run.allowed_tools,
+                    mode: decision.next_mode(),
+                },
+            )
+        }
+        None => (
+            AgentStart::Fresh {
+                history,
+                user_message,
+            },
+            AgentConfig {
+                max_turns: 10,
+                system_prompt,
+                allowed_tools: allowed_tools.clone(),
+                mode,
+            },
+        ),
     };
 
     // 创建 tool context 的 emit 回调
@@ -1081,8 +974,7 @@ async fn chat_stream(
 
     // 启动 agent 循环
     let mut event_rx = run_agent_loop(
-        history,
-        user_message,
+        start,
         req.attachments.clone().unwrap_or_default(),
         ctx,
         agent_config,
@@ -1128,6 +1020,38 @@ async fn chat_stream(
                         "duration_ms": duration_ms,
                     }).to_string()),
                 ),
+                AgentEvent::PlanProposed { plan, call_id, other_call_ids, conversation } => {
+                    match agent_run_repo::create(
+                        &pool_for_save,
+                        &session_id_for_save,
+                        &user_id_for_save,
+                        plan,
+                        conversation,
+                        call_id,
+                        other_call_ids,
+                        allowed_tools.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(plan_run_id) => Some(Event::default().event("plan_proposed").data(serde_json::json!({
+                            "run_id": plan_run_id,
+                            "plan": plan,
+                            "session_id": session_id_for_save,
+                        }).to_string())),
+                        Err(e) => {
+                            tracing::error!("[Plan] 保存待确认计划失败: {e:?}");
+                            Some(Event::default().event("error").data(serde_json::json!({
+                                "message": "计划保存失败，请重试",
+                            }).to_string()))
+                        }
+                    }
+                }
+                AgentEvent::PlanProgress { step_id, success } => Some(
+                    Event::default().event("plan_progress").data(serde_json::json!({
+                        "step_id": step_id,
+                        "success": success,
+                    }).to_string()),
+                ),
                 AgentEvent::Usage { usage } => {
                     total_usage.add(*usage);
                     Some(Event::default().event("usage").data(serde_json::json!({
@@ -1171,7 +1095,7 @@ async fn chat_stream(
                         "at": chrono::Utc::now().to_rfc3339(),
                     }).to_string()),
                 ),
-                AgentEvent::Done { summary, artifacts, cancelled } => {
+                AgentEvent::Done { summary, artifacts, cancelled, awaiting_approval } => {
                     if collected_artifacts.is_empty() {
                         collected_artifacts = artifacts.clone();
                     }
@@ -1211,6 +1135,7 @@ async fn chat_stream(
                         "artifacts": session_artifacts,
                         "new_artifacts": collected_artifacts,
                         "cancelled": cancelled,
+                        "awaiting_approval": awaiting_approval,
                         "usage": total_usage,
                     }).to_string()))
                 }

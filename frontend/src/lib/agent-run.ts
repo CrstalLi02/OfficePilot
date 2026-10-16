@@ -47,7 +47,8 @@ export function applyRunEvent(state: AgentRunState, event: string, data: any, no
 
   switch (event) {
     case 'tool_start':
-      if (!callId) return state
+      // propose_plan 不是真正执行的工具，由计划卡片展示
+      if (!callId || data.tool === 'propose_plan') return state
       return {
         ...state,
         tools: upsert(state.tools, callId, (prev) => prev ?? { callId, tool: data.tool, status: 'pending', startedAt: now }),

@@ -65,12 +65,9 @@ impl OfficeTool for VideoStoryboardTool {
     }
 
     fn description(&self) -> &str {
-        "视频分镜规划：输入视频主题和可选参考图片，AI 自动拆分为多个镜头，每个镜头包含独立的提示词、生成模式、时长和首尾帧分配。适用于复杂视频需求（如多场景宣传片、故事短片）。规划完成后，可调用 video_batch_generate 一键批量生成所有镜头。"
+        "视频分镜规划：把视频需求拆成多个镜头，每个镜头含提示词、生成模式、时长和首尾帧分配。适用于多场景、多镜头、有故事线的复杂视频（宣传片、故事短片、发布会视频）；简单的单镜头视频直接用 video_generate。规划完成后调用 video_batch_generate 批量生成。"
     }
 
-    fn is_read_only(&self) -> bool {
-        true
-    }
 
     fn produces_artifact(&self) -> bool {
         true

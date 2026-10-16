@@ -11,7 +11,7 @@ import { ConversationSidebar } from '@/components/history/ConversationSidebar'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu } from 'lucide-react'
-import type { AppSettings, Artifact, ChatAttachment, ConversationRecord, InputRef, LLMProfile, PersistedSession, ProjectMeta, ToolKind, ToolConfigMap } from '@/types'
+import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, ToolKind, ToolConfigMap } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
 const LOGO_URL = '/logo.png'
@@ -23,8 +23,10 @@ interface ToastState {
   tone: ToastTone
 }
 
-function buildRestoredMessages(session: PersistedSession) {
-  const restored = (session.messages || [])
+const AGENT_MODE_KEY = 'walioffice-agent-mode'
+
+function buildRestoredMessages(session: PersistedSession): ChatMessage[] {
+  const restored: ChatMessage[] = (session.messages || [])
     .filter((msg) => (msg.role === 'user' || msg.role === 'assistant') && msg.content?.trim())
     .map((msg) => ({
       role: msg.role as 'user' | 'assistant',
@@ -39,6 +41,18 @@ function buildRestoredMessages(session: PersistedSession) {
       content: session.summary,
       timestamp: session.updated_at,
     })
+  }
+
+  // 等待确认的计划挂到最后一条助手消息上，刷新后仍可确认
+  const pending = session.pending_plan
+  if (pending) {
+    const planState: PlanCardState = { runId: pending.run_id, plan: pending.plan, status: 'pending' }
+    const lastAssistant = restored.map((msg) => msg.role).lastIndexOf('assistant')
+    if (lastAssistant >= 0) {
+      restored[lastAssistant] = { ...restored[lastAssistant], plan: planState }
+    } else {
+      restored.push({ role: 'assistant', content: '', timestamp: session.updated_at, plan: planState })
+    }
   }
 
   return restored
@@ -185,6 +199,19 @@ export default function Studio() {
   const [processLogs, setProcessLogs] = useState<string[]>([])
   /** 本轮工具调用状态（并行卡片） */
   const [runState, setRunState] = useState<AgentRunState>(EMPTY_RUN)
+  /** 工作模式（记在本地，下次打开沿用） */
+  const [agentMode, setAgentMode] = useState<AgentMode>(() => {
+    try {
+      const stored = localStorage.getItem(AGENT_MODE_KEY)
+      return stored === 'plan' || stored === 'ask' ? stored : 'craft'
+    } catch {
+      return 'craft'
+    }
+  })
+  /** 用户手动点选的工具；只有它会作为约束发给后端（关键词推断只用于界面展示） */
+  const pickedToolRef = useRef<ToolKind>('general')
+  /** 正在执行的已确认计划，用于把 plan_progress 标到对应卡片上 */
+  const activePlanRunRef = useRef<string | null>(null)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [inputRefs, setInputRefs] = useState<InputRef[]>([])
   /** 历史会话产物列表（供 @ 引用） */
@@ -383,7 +410,33 @@ export default function Studio() {
   }, [conversationQuery])
 
   const handleToolChange = (tool: ToolKind) => {
+    pickedToolRef.current = tool
     setActiveTool(tool)
+  }
+
+  const handleModeChange = (mode: AgentMode) => {
+    setAgentMode(mode)
+    try {
+      localStorage.setItem(AGENT_MODE_KEY, mode)
+    } catch {
+      // 存储不可用时只在本次会话内生效
+    }
+  }
+
+  /** 修改当前消息列表（同步到当前 tab，避免被 tab 状态覆盖） */
+  const patchMessages = (patch: (messages: ChatMessage[]) => ChatMessage[]) => {
+    usePPTStore.setState((state) => {
+      const msgs = patch([...state.messages])
+      const tabId = state.activeTabId
+      if (tabId && state.tabs[tabId]) {
+        return { messages: msgs, tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } } }
+      }
+      return { messages: msgs }
+    })
+  }
+
+  const patchPlan = (runId: string, patch: (plan: PlanCardState) => PlanCardState) => {
+    patchMessages((msgs) => msgs.map((msg) => (msg.plan?.runId === runId ? { ...msg, plan: patch(msg.plan) } : msg)))
   }
 
   // ====== 多 Tab 管理 ======
@@ -425,6 +478,7 @@ export default function Studio() {
     setAttachments([])
     setInputRefs([])
     setActiveTool('general')
+    pickedToolRef.current = 'general'
     setActiveProjectId(null)
     setStreamStatus('空闲')
     setStreamPhase('idle')
@@ -622,6 +676,7 @@ export default function Studio() {
     autoExportedArtifactIdsRef.current.clear()
     autoSavedArtifactIdsRef.current.clear()
     setActiveTool('general')
+    pickedToolRef.current = 'general'
     setShowArtifactPanel(false)
     setFollowLatestSlide(true)
     setPptProgress(null)
@@ -1140,11 +1195,16 @@ export default function Studio() {
     return activeTool
   }
 
-  const handleSend = async () => {
-    if ((!input.trim() && attachments.length === 0 && inputRefs.length === 0) || isStreaming) return
+  /** override 用于提交计划决定：显示一条用户消息并带上 resume 恢复那次运行 */
+  const handleSend = async (override?: { displayMessage: string; resume: PlanDecisionPayload }) => {
+    if (override) {
+      if (isStreaming) return
+    } else if ((!input.trim() && attachments.length === 0 && inputRefs.length === 0) || isStreaming) {
+      return
+    }
 
     const hasImageAttachment = attachments.some((item) => item.kind === 'image')
-    const baseMessage = input.trim() || (hasImageAttachment ? '请识别并说明我上传图片的主要内容。' : '请结合我上传的文件内容继续处理。')
+    const baseMessage = override?.displayMessage || input.trim() || (hasImageAttachment ? '请识别并说明我上传图片的主要内容。' : '请结合我上传的文件内容继续处理。')
     // 将 @ 引用标签拼接 + 产物内容摘要作为上下文提供给 AI
     const refsText = inputRefs.map((ref) => ref.refText).join('\n')
     const refSummaries = inputRefs
@@ -1153,15 +1213,19 @@ export default function Studio() {
     const refContext = refSummaries.length > 0
       ? `\n\n--- 引用产物内容 ---\n${refSummaries.join('\n\n')}\n--- 引用产物内容结束 ---`
       : ''
-    const message = (refsText || refContext)
+    const message = override
+      ? baseMessage
+      : (refsText || refContext)
       ? (baseMessage.trim() ? `${baseMessage}\n\n${refsText}${refContext}` : `${refsText}${refContext}`)
       : baseMessage
-    const pendingAttachments = attachments
-    const inferredTool = inferToolFromMessage(message, pendingAttachments)
+    const pendingAttachments = override ? [] : attachments
+    const inferredTool = override ? activeTool : inferToolFromMessage(message, pendingAttachments)
     if (inferredTool !== activeTool) setActiveTool(inferredTool)
-    setInput('')
-    setAttachments([])
-    setInputRefs([])
+    if (!override) {
+      setInput('')
+      setAttachments([])
+      setInputRefs([])
+    }
     setStreaming(true)
     setFollowLatestSlide(true)
     setPptProgress(null)
@@ -1192,7 +1256,7 @@ export default function Studio() {
       content: baseMessage,
       timestamp: new Date().toISOString(),
       attachments: pendingAttachments,
-      inputRefs: inputRefs.length > 0 ? inputRefs : undefined,
+      inputRefs: !override && inputRefs.length > 0 ? inputRefs : undefined,
     })
 
     // 发给后端的消息仍包含完整引用上下文
@@ -1225,7 +1289,7 @@ export default function Studio() {
         activeProjectId,
         sessionId,
         selectedTheme,
-        inferredTool,
+        pickedToolRef.current,
         selectedModel,
         pendingAttachments,
         (event, data) => {
@@ -1233,6 +1297,26 @@ export default function Studio() {
           switch (event) {
             case 'run_start':
               if (data.session_id) runSessionRef.current = data.session_id
+              break
+
+            case 'plan_proposed':
+              if (data.session_id) setSessionId(data.session_id)
+              patchMessages((msgs) => {
+                msgs[msgs.length - 1] = {
+                  ...msgs[msgs.length - 1],
+                  plan: { runId: data.run_id, plan: data.plan, status: 'pending' },
+                }
+                return msgs
+              })
+              break
+
+            case 'plan_progress':
+              if (activePlanRunRef.current) {
+                patchPlan(activePlanRunRef.current, (plan) => ({
+                  ...plan,
+                  stepStatus: { ...plan.stepStatus, [data.step_id]: data.success ? 'done' : 'error' },
+                }))
+              }
               break
 
             case 'tool_start':
@@ -1392,7 +1476,7 @@ export default function Studio() {
 
             case 'done': {
               const doneArtifacts = Array.isArray(data.new_artifacts) ? data.new_artifacts : []
-              const doneStatus = data.cancelled ? '已停止生成' : doneArtifacts.length > 0 ? '生成完成' : '回复完成'
+              const doneStatus = data.cancelled ? '已停止生成' : data.awaiting_approval ? '等待确认计划' : doneArtifacts.length > 0 ? '生成完成' : '回复完成'
               if (data.cancelled) {
                 if (!assistantText.trim()) {
                   assistantText = '已停止本次生成。'
@@ -1464,7 +1548,8 @@ export default function Studio() {
         },
         token,
         abortController.signal,
-        toolConfig
+        toolConfig,
+        { mode: agentMode, resume: override?.resume }
       )
     } catch (err) {
       console.error('Chat error:', err)
@@ -1519,6 +1604,29 @@ export default function Studio() {
       return
     }
     forceStop()
+  }
+
+  const handlePlanDecision = (messageIndex: number, decision: PlanDecisionKind, steps: PlanStep[], feedback: string) => {
+    const plan = usePPTStore.getState().messages[messageIndex]?.plan
+    if (!plan || plan.status !== 'pending' || isStreaming) return
+    const status = decision === 'approve' ? 'approved' : decision === 'revise' ? 'revised' : 'rejected'
+    patchPlan(plan.runId, (current) => ({
+      ...current,
+      status,
+      approvedStepIds: decision === 'approve' ? steps.map((step) => step.id) : undefined,
+    }))
+    activePlanRunRef.current = decision === 'approve' ? plan.runId : null
+    const trimmed = feedback.trim()
+    const label = decision === 'approve' ? '确认执行计划' : decision === 'revise' ? '修改计划' : '取消计划'
+    handleSend({
+      displayMessage: trimmed ? `${label}：${trimmed}` : label,
+      resume: {
+        run_id: plan.runId,
+        decision,
+        steps: decision === 'approve' ? steps : undefined,
+        feedback: trimmed || undefined,
+      },
+    })
   }
 
   /** 直接断开流（后端无响应或尚未拿到会话 id 时的兜底） */
@@ -1967,7 +2075,10 @@ export default function Studio() {
                 onToolChange={handleToolChange}
                 onThemeChange={setSelectedTheme}
                 onInputChange={setInput}
-                onSend={handleSend}
+                onSend={() => handleSend()}
+                mode={agentMode}
+                onModeChange={handleModeChange}
+                onPlanDecision={handlePlanDecision}
                 onStop={handleStop}
                 onToolConfigChange={setToolConfig}
                 attachments={attachments}

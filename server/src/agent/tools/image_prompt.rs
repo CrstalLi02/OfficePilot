@@ -186,7 +186,7 @@ impl OfficeTool for ImagePromptTool {
     }
 
     fn description(&self) -> &str {
-        "生成图片结果：基于 Agnes Image 2.1 Flash 生成高质量图片，并返回可直接预览的图片链接。"
+        "生成或修改图片：海报、封面、logo、插画、配图、主视觉，或基于上传图片改图、换背景、换风格，返回可预览的图片链接。只在用户明确要出图时调用；只要提示词文字，或要识别、分析图片内容时不要调用。"
     }
 
     fn parameters(&self) -> serde_json::Value {

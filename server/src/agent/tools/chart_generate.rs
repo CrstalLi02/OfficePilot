@@ -27,7 +27,7 @@ impl OfficeTool for ChartGenerateTool {
     }
 
     fn description(&self) -> &str {
-        "生成可视化图表：根据用户需求输出可直接渲染的 ECharts 图表产物，适合普通对话中的趋势、占比、对比、排名、漏斗和指标可视化。"
+        "生成可在右侧直接渲染的 ECharts 图表：趋势、对比、占比、排名、漏斗、指标等可视化。用户要“图表/可视化/折线图/柱状图/饼图”且没有要求 Excel 文件时用它；同时要表格文件和图表时，与 sheet_generate 一起调用。"
     }
 
     fn parameters(&self) -> serde_json::Value {

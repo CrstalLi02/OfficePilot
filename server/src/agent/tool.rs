@@ -145,6 +145,7 @@ pub trait OfficeTool: Send + Sync {
     fn description(&self) -> &str;
     /// JSON Schema 参数定义
     fn parameters(&self) -> serde_json::Value;
+    /// 只读取信息、不生成产物也没有副作用（Ask 模式只开放这类工具）
     fn is_read_only(&self) -> bool {
         false
     }
