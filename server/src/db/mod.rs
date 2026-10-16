@@ -14,6 +14,17 @@ use tracing::info;
 
 pub type DbPool = AnyPool;
 
+/// 读取文本列。经 Any 驱动时 SQLite 返回 TEXT，MySQL 的 TEXT 列可能以字节返回，这里两种都兼容
+pub fn text_column(row: &sqlx::any::AnyRow, index: usize) -> Result<Option<String>, sqlx::Error> {
+    use sqlx::Row;
+    match row.try_get::<Option<String>, _>(index) {
+        Ok(text) => Ok(text),
+        Err(_) => row
+            .try_get::<Option<Vec<u8>>, _>(index)
+            .map(|bytes| bytes.map(|b| String::from_utf8_lossy(&b).into_owned())),
+    }
+}
+
 pub async fn init_pool(database_url: &str, data_dir: &str, max_connections: u32) -> Result<DbPool> {
     // 安装 sqlx any 驱动（必须在使用 AnyPool 前调用）
     sqlx::any::install_default_drivers();
