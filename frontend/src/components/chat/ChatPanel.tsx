@@ -1,15 +1,16 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertCircle, Check, Circle, Download, Eye, Files, Loader2, Send, Sparkles, Square, ChevronRight, ChevronDown, Terminal, Wrench, FileEdit, Sheet, PenTool, Image as ImageIcon, LayoutDashboard, Bot, Paperclip, X, Clapperboard, MessageSquarePlus } from 'lucide-react'
+import { AlertCircle, Check, Circle, Download, Eye, Files, Loader2, Send, Sparkles, Square, ChevronRight, ChevronDown, Terminal, Wrench, FileEdit, Sheet, PenTool, Image as ImageIcon, LayoutDashboard, Bot, Paperclip, X, Clapperboard, MessageSquarePlus, BookOpen } from 'lucide-react'
 import { AGENT_TOOLS, getAgentTool } from '@/config/agent-tools'
 import { useRef, useState, useEffect, Fragment, useMemo } from 'react'
 import { FilePickerPanel } from './FilePickerPanel'
-import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
+import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 import { ToolConfigDropdown } from './ToolConfigDropdown'
 import { RunTimeline } from './RunTimeline'
 import { PlanCard } from './PlanCard'
+import { SkillMenu } from './SkillMenu'
 import type { AgentRunState } from '@/lib/agent-run'
 
 interface ChatPanelProps {
@@ -55,6 +56,11 @@ interface ChatPanelProps {
   onInsertArtifact: (artifact: Artifact, sessionId?: string) => void
   /** @ 引用工作区文件 */
   onInsertFileRef?: (file: WorkspaceFile) => void
+  /** 本轮选择的技能（输入框 / 菜单） */
+  selectedSkills?: string[]
+  onAddSkill?: (skill: SkillSummary) => void
+  onRemoveSkill?: (name: string) => void
+  onOpenSkills?: () => void
   /** 历史会话产物列表（用于 @ 引用历史产物） */
   historyArtifacts?: { artifact: Artifact; sessionTitle: string; sessionId: string }[]
   messagesEndRef: React.RefObject<HTMLDivElement>
@@ -344,8 +350,13 @@ export function ChatPanel({
   onExportArtifact,
   onInsertArtifact,
   onInsertFileRef,
+  selectedSkills = [],
+  onAddSkill,
+  onRemoveSkill,
+  onOpenSkills,
   messagesEndRef,
 }: ChatPanelProps) {
+  const [showSkillMenu, setShowSkillMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const tool = getAgentTool(activeTool)
   const logsEndRef = useRef<HTMLDivElement>(null)
@@ -449,6 +460,21 @@ export function ChatPanel({
       e.preventDefault()
       onSend()
       return
+    }
+    // 技能菜单打开时由菜单接管键盘
+    if (showSkillMenu) {
+      if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') e.preventDefault()
+      return
+    }
+    // 行首输入 / 打开技能菜单
+    if (e.key === '/' && onAddSkill && !(nativeEvent.isComposing || e.currentTarget.dataset.composing === 'true')) {
+      const ta = e.currentTarget
+      const before = ta.value.slice(0, ta.selectionStart)
+      if (before.trim() === '' || /\n\s*$/.test(before)) {
+        e.preventDefault()
+        setShowSkillMenu(true)
+        return
+      }
     }
     // @ 快捷键触发文件选择浮层（不在输入法组词状态下）
     if (e.key === '@' && !(nativeEvent.isComposing || e.currentTarget.dataset.composing === 'true')) {
@@ -962,8 +988,18 @@ export function ChatPanel({
                 ))}
               </div>
             )}
-            {inputRefs.length > 0 && (
+            {(inputRefs.length > 0 || selectedSkills.length > 0) && (
               <div className="mb-1.5 flex flex-wrap gap-1.5 px-1">
+                {selectedSkills.map((name) => (
+                  <span key={name} className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
+                    <BookOpen className="h-3 w-3" />/{name}
+                    {!isStreaming && onRemoveSkill && (
+                      <button type="button" onClick={() => onRemoveSkill(name)} className="ml-0.5 rounded hover:bg-violet-100" aria-label={`移除技能 ${name}`}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
                 {inputRefs.map((refItem) => (
                   <InputRefChip
                     key={refItem.id}
@@ -974,6 +1010,20 @@ export function ChatPanel({
               </div>
             )}
             <div className="relative rounded-[1.3rem] border border-black/[0.05] bg-[#fcfbf8]/96 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+              {showSkillMenu && !isStreaming && onAddSkill && (
+                <SkillMenu
+                  onSelect={(skill) => {
+                    setShowSkillMenu(false)
+                    onAddSkill(skill)
+                    window.setTimeout(() => textareaRef.current?.focus(), 50)
+                  }}
+                  onManage={() => {
+                    setShowSkillMenu(false)
+                    onOpenSkills?.()
+                  }}
+                  onClose={() => setShowSkillMenu(false)}
+                />
+              )}
               {showFilePicker && !isStreaming && (
                 <FilePickerPanel
                   artifacts={artifactPickerScope}
@@ -1079,6 +1129,16 @@ export function ChatPanel({
                         <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-400" />
                       </div>
                       <div className="inline-flex items-center gap-1 rounded-full border border-black/[0.06] bg-[#fbfaf7] p-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_3px_rgba(15,23,42,0.05)]">
+                        {onOpenSkills && (
+                          <button
+                            type="button"
+                            onClick={onOpenSkills}
+                            className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full text-surface-500 transition-all hover:bg-white hover:text-surface-900"
+                            title="技能（也可以在输入框行首输入 /）"
+                          >
+                            <BookOpen className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={onPickAttachments}

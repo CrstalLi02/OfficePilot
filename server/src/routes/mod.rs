@@ -11,6 +11,7 @@ pub mod project;
 pub mod session;
 pub mod workspace;
 pub mod settings;
+pub mod skills;
 
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
@@ -40,6 +41,7 @@ pub fn build_router() -> Router {
         .merge(doc_export::router())
         .merge(health::router())
         .merge(workspace::router())
+        .merge(skills::router())
         .nest_service(
             "/outputs",
             ServeDir::new(crate::config::config().render_output_dir.clone()),

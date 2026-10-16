@@ -1,7 +1,7 @@
 //! 工作模式（Craft / Plan / Ask）与计划确认。
 //!
 //! - Craft：直接执行，开放全部生成类工具
-//! - Plan：只开放 `propose_plan`，模型先提交计划；用户确认后再以 Craft 工具集继续执行
+//! - Plan：只开放 `propose_plan`（以及只读的技能工具），模型先提交计划；用户确认后再以 Craft 工具集继续执行
 //! - Ask：只开放只读工具（如联网搜索），只回答问题、不生成产物
 
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,8 @@ impl AgentMode {
     pub fn allows(&self, tool_name: &str, read_only: bool) -> bool {
         match self {
             AgentMode::Craft => tool_name != PROPOSE_PLAN,
-            AgentMode::Plan => tool_name == PROPOSE_PLAN,
+            // 规划阶段可以加载技能说明作为参考
+            AgentMode::Plan => matches!(tool_name, PROPOSE_PLAN | "use_skill" | "read_skill_file"),
             AgentMode::Ask => read_only && tool_name != PROPOSE_PLAN,
         }
     }
@@ -40,7 +41,7 @@ impl AgentMode {
         match self {
             AgentMode::Craft => "## 当前模式：Craft（直接执行）\n需求清楚时直接调用工具交付产物；缺少的少量信息做合理假设，不要反复确认。",
             AgentMode::Plan => "## 当前模式：Plan（先规划，用户确认后执行）\n凡是需要生成产物（文档、PPT、表格、图表、图片、视频等）或需要多个步骤的请求，必须先调用 propose_plan 提交执行计划，此时不要输出最终内容；用户确认后系统会让你继续执行。纯问答、闲聊直接用文字回答，不需要计划。",
-            AgentMode::Ask => "## 当前模式：Ask（只问答）\n只用文字回答、解释和建议，不生成任何文件或产物；需要外部最新信息时可以联网搜索。如果用户想要生成产物，告诉他切换到 Craft 或 Plan 模式。",
+            AgentMode::Ask => "## 当前模式：Ask（只问答）\n只用文字回答、解释和建议，不生成任何文件或产物；需要外部最新信息时可以联网搜索。如果用户想要生成产物，提示用户切换到 Craft 或 Plan 模式。",
         }
     }
 }
@@ -219,6 +220,7 @@ mod tests {
         assert!(!AgentMode::Craft.allows(PROPOSE_PLAN, false));
         assert!(AgentMode::Plan.allows(PROPOSE_PLAN, false));
         assert!(!AgentMode::Plan.allows("doc_generate", false));
+        assert!(AgentMode::Plan.allows("use_skill", true));
         assert!(AgentMode::Ask.allows("web_search", true));
         assert!(!AgentMode::Ask.allows("doc_generate", false));
     }

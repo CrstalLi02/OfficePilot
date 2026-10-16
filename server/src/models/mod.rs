@@ -139,6 +139,9 @@ pub struct ChatRequest {
     /// 工作模式：craft（默认，直接执行）/ plan（先确认计划）/ ask（只问答）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<crate::agent::plan::AgentMode>,
+    /// 用户在输入框 / 菜单里显式选择的技能名称
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<String>>,
     /// 用户在输入框 @ 引用的工作区文件 id
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_refs: Option<Vec<String>>,

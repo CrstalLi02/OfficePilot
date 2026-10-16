@@ -256,7 +256,8 @@ async fn run_attempt(
     } = resolve_routing(&req);
     let config = AgentConfig {
         max_turns: 1,
-        system_prompt,
+        // 与线上一致：附上技能清单（评测只用内置技能）
+        system_prompt: format!("{system_prompt}\n\n{}", crate::skills::builtin_listing()),
         allowed_tools,
         mode,
     };

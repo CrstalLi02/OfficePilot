@@ -9,9 +9,10 @@ import { ConversationTabs } from '@/components/chat/ConversationTabs'
 import { SlidePreview } from '@/components/preview/SlidePreview'
 import { ConversationSidebar } from '@/components/history/ConversationSidebar'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
+import { SkillsDialog } from '@/components/skills/SkillsDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu } from 'lucide-react'
-import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
+import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
 import { contentFingerprint } from '@/lib/artifact-diff'
@@ -211,6 +212,9 @@ export default function Studio() {
   })
   /** 用户手动点选的工具；只有它会作为约束发给后端（关键词推断只用于界面展示） */
   const pickedToolRef = useRef<ToolKind>('general')
+  /** 本轮选择的技能（发送后清空） */
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
+  const [showSkills, setShowSkills] = useState(false)
   /** 正在执行的已确认计划，用于把 plan_progress 标到对应卡片上 */
   const activePlanRunRef = useRef<string | null>(null)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
@@ -1275,6 +1279,8 @@ export default function Studio() {
       : baseMessage
     const pendingAttachments = override ? [] : attachments
     const fileRefs = override ? [] : inputRefs.flatMap((ref) => (ref.fileId ? [ref.fileId] : []))
+    const skills = override ? [] : selectedSkills
+    if (!override) setSelectedSkills([])
     const inferredTool = override ? activeTool : inferToolFromMessage(message, pendingAttachments)
     if (inferredTool !== activeTool) setActiveTool(inferredTool)
     if (!override) {
@@ -1605,7 +1611,7 @@ export default function Studio() {
         token,
         abortController.signal,
         toolConfig,
-        { mode: agentMode, resume: override?.resume, fileRefs }
+        { mode: agentMode, resume: override?.resume, fileRefs, skills }
       )
     } catch (err) {
       console.error('Chat error:', err)
@@ -2147,6 +2153,10 @@ export default function Studio() {
                 onExportArtifact={handleExportArtifact}
                 onInsertArtifact={handleInsertArtifactToInput}
                 onInsertFileRef={handleInsertFileRef}
+                selectedSkills={selectedSkills}
+                onAddSkill={(skill: SkillSummary) => setSelectedSkills((current) => (current.includes(skill.name) ? current : [...current, skill.name]))}
+                onRemoveSkill={(name) => setSelectedSkills((current) => current.filter((n) => n !== name))}
+                onOpenSkills={() => setShowSkills(true)}
                 messagesEndRef={messagesEndRef}
               />
             )}
@@ -2228,6 +2238,7 @@ export default function Studio() {
           onClose={() => setShowPresent(false)}
         />
       )}
+      <SkillsDialog open={showSkills} onClose={() => setShowSkills(false)} sessionId={sessionId} onToast={showToast} />
       {toast && (
         <div className="pointer-events-none fixed right-5 top-5 z-[70] flex justify-end" aria-live="polite">
           <div className={`pointer-events-auto flex max-w-sm items-start gap-3 rounded-3xl border px-4 py-3 shadow-[0_18px_55px_rgba(24,24,27,0.16)] backdrop-blur-2xl ${
