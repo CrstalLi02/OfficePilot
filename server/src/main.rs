@@ -5,6 +5,7 @@ mod db;
 mod error;
 mod eval;
 mod file_extract;
+mod file_store;
 mod image_ocr;
 mod llm;
 mod models;
