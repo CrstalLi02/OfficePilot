@@ -1,0 +1,45 @@
+{"id":"ppt-basic","category":"ppt","message":"帮我做个PPT汇报材料，主题是2026年Q3销售复盘","expect_any":["ppt_plan","ppt_generate"],"forbid":["doc_generate","image_prompt","video_generate"]}
+{"id":"ppt-en","category":"ppt","message":"Make a 10-slide presentation introducing our new CRM product to enterprise customers","expect_any":["ppt_plan","ppt_generate"],"forbid":["video_generate"]}
+{"id":"ppt-training","category":"ppt","message":"做一份新员工信息安全培训课件，大概15页","expect_any":["ppt_plan","ppt_generate"],"forbid":["video_generate","image_prompt"]}
+{"id":"doc-prd","category":"doc","message":"写一份会员积分系统的PRD，需要导出Word","expect":["doc_generate"],"forbid":["ppt_plan","ppt_generate"]}
+{"id":"doc-report","category":"doc","message":"帮我写一份关于远程办公效率的调研报告，正式一点","expect_any":["doc_generate","md_generate"],"forbid":["ppt_plan","video_generate"]}
+{"id":"doc-plan","category":"doc","message":"出一份下季度市场推广执行方案文档","expect_any":["doc_generate","md_generate"],"forbid":["video_generate","image_prompt"]}
+{"id":"md-readme","category":"markdown","message":"给我写一个开源项目的README，项目是一个命令行番茄钟工具","expect":["md_generate"],"forbid":["doc_generate","ppt_plan"]}
+{"id":"md-minutes","category":"markdown","message":"把下面内容整理成会议纪要：今天讨论了上线时间定在11月5日，张三负责后端联调，李四负责测试，风险是支付通道审批可能延期","expect_any":["md_generate","doc_generate"],"forbid":["ppt_plan","video_generate"]}
+{"id":"md-kb","category":"markdown","message":"整理一篇知识库文章：Git 分支管理最佳实践","expect":["md_generate"],"forbid":["video_generate"]}
+{"id":"sheet-budget","category":"sheet","message":"做一个10人团队年会的预算表，要能导出Excel","expect":["sheet_generate"],"forbid":["chart_generate","ppt_plan"]}
+{"id":"sheet-schedule","category":"sheet","message":"帮我排一个为期6周的项目排期表，包含任务、负责人、开始结束日期","expect":["sheet_generate"],"forbid":["video_generate"]}
+{"id":"sheet-xlsx-en","category":"sheet","message":"Create an xlsx tracker for job applications with company, role, status, date applied and next step","expect":["sheet_generate"]}
+{"id":"chart-trend","category":"chart","message":"用折线图展示一下过去12个月的用户增长趋势，数据你按一个SaaS产品合理模拟","expect":["chart_generate"],"forbid":["sheet_generate","ppt_plan"]}
+{"id":"chart-share","category":"chart","message":"国内主流云厂商市场份额大概是多少？画个饼图","expect_any":["chart_generate","web_search"],"forbid":["sheet_generate","image_prompt"]}
+{"id":"chart-funnel","category":"chart","message":"做一个电商转化漏斗图：访问10万，加购2万，下单8000，支付6000","expect":["chart_generate"],"forbid":["image_prompt"]}
+{"id":"drawio-flow","category":"drawio","message":"画一个请假审批的流程图","expect":["drawio_generate"],"forbid":["image_prompt","chart_generate"]}
+{"id":"drawio-arch","category":"drawio","message":"帮我画一张微服务架构图：网关、用户服务、订单服务、支付服务、MySQL、Redis、Kafka","expect":["drawio_generate"],"forbid":["image_prompt"]}
+{"id":"drawio-er","category":"drawio","message":"画一个图书馆管理系统的ER图","expect":["drawio_generate"],"forbid":["image_prompt"]}
+{"id":"image-poster","category":"image","message":"帮我做一张双十一促销海报，红色喜庆风格","expect":["image_prompt"],"forbid":["video_generate","ppt_plan"]}
+{"id":"image-logo","category":"image","message":"设计一个咖啡店的logo，极简线条风","expect":["image_prompt"],"forbid":["drawio_generate"]}
+{"id":"image-edit-attach","category":"image","message":"帮我改图，把背景换成海边","attachments":[{"kind":"image","name":"photo.png"}],"expect":["image_prompt"],"forbid":["video_generate"]}
+{"id":"video-simple","category":"video","message":"生成一个5秒的视频：一只橘猫在窗台上晒太阳","expect_any":["video_generate","video_storyboard"],"forbid":["image_prompt"]}
+{"id":"video-animate-attach","category":"video","message":"让这张图片动起来","attachments":[{"kind":"image","name":"scene.png"}],"expect":["video_generate"],"forbid":["image_prompt"]}
+{"id":"video-cartoon","category":"video","message":"帮我做个动画片","expect_any":["video_generate","video_storyboard"],"forbid":["image_prompt"]}
+{"id":"video-complex","category":"video","message":"做一个30秒的新品发布会宣传片，包含开场、产品特写、用户场景、结尾logo四个镜头","expect_any":["video_storyboard","video_generate","video_batch_generate"],"forbid":["ppt_plan"]}
+{"id":"text-first-prompt","category":"text_first","message":"先帮我写提示词，我想做一个动画片，关于西游记孙悟空的","forbid":["video_generate","video_storyboard","video_batch_generate","image_prompt"]}
+{"id":"text-first-script","category":"text_first","message":"帮我写个视频脚本，主题是环保","forbid":["video_generate","video_storyboard","video_batch_generate"]}
+{"id":"text-first-plan","category":"text_first","message":"我想做一个品牌宣传片，先帮我构思一下方案","forbid":["video_generate","video_batch_generate","image_prompt"]}
+{"id":"text-first-imgprompt","category":"text_first","message":"写几个用于生成赛博朋克城市夜景图片的prompt，先不要出图","forbid":["image_prompt","video_generate"]}
+{"id":"understand-what","category":"image_understanding","message":"这张图片是什么","attachments":[{"kind":"image","name":"unknown.png"}],"expect_no_tool":true}
+{"id":"understand-ocr","category":"image_understanding","message":"帮我把截图里的文字提取出来","attachments":[{"kind":"image","name":"screenshot.png"}],"forbid":["image_prompt","video_generate"]}
+{"id":"search-news","category":"search","message":"搜索一下最近一周AI Agent领域有哪些重要新闻","expect":["web_search"],"forbid":["video_generate"]}
+{"id":"search-policy","category":"search","message":"查一下2026年个人所得税专项附加扣除的最新政策","expect":["web_search"]}
+{"id":"search-then-md","category":"search","message":"联网检索一下 MCP 协议的最新进展，然后整理成一篇Markdown调研笔记","expect_any":["web_search"],"forbid":["video_generate"]}
+{"id":"chat-hello","category":"chat","message":"你好","expect_no_tool":true}
+{"id":"chat-qa","category":"chat","message":"PPT和Keynote有什么区别？简单说说","expect_no_tool":true}
+{"id":"chat-capability","category":"chat","message":"你都能帮我做什么？","expect_no_tool":true}
+{"id":"compound-outline-then-ppt","category":"compound","message":"先帮我写大纲，再生成PPT，主题是公司年度战略","expect_any":["md_generate","ppt_plan","doc_generate"],"forbid":["video_generate","image_prompt"]}
+{"id":"multi-ppt-drawio-doc","category":"compound","message":"围绕电商大促技术保障，同时给我一份PPT、一张系统架构流程图和一份Word方案文档","expect_any":["ppt_plan","drawio_generate","doc_generate"],"forbid":["video_generate","image_prompt"]}
+{"id":"multi-sheet-chart","category":"compound","message":"做一份各部门季度费用的Excel，并且配一个柱状图","expect_any":["sheet_generate","chart_generate"],"forbid":["video_generate"]}
+{"id":"ref-image-to-video","category":"reference","message":"用刚才那张图做个视频","history":[{"role":"user","content":"帮我画一张雪山日出的风景图"},{"role":"assistant","content":"已生成图片：雪山日出风景图，可在右侧预览。"}],"expect_any":["video_generate","video_storyboard"],"forbid":["image_prompt"]}
+{"id":"ref-modify-ppt","category":"reference","message":"把第三页改得更简洁一点","history":[{"role":"user","content":"帮我做个西游记的PPT"},{"role":"assistant","content":"已生成 PPT《西游记人物与主题》，共 8 页。"}],"forbid":["video_generate","image_prompt","doc_generate"]}
+{"id":"attach-text-summarize","category":"attachment","message":"把这份文档总结成一页汇报PPT","attachments":[{"kind":"text","name":"weekly.md","text":"# 周报\n- 完成支付模块重构，接口耗时下降40%\n- 修复线上Bug 12个\n- 下周计划：灰度发布新版结算页，压测订单服务"}],"expect_any":["ppt_plan","ppt_generate"],"forbid":["video_generate"]}
+{"id":"attach-text-qa","category":"attachment","message":"这份文档里提到的接口耗时下降了多少？","attachments":[{"kind":"text","name":"weekly.md","text":"# 周报\n- 完成支付模块重构，接口耗时下降40%\n- 修复线上Bug 12个"}],"expect_no_tool":true}
+{"id":"ui-image-mode-text-first","category":"ui_mode","message":"先帮我写一段海报文案，再出图","tool_kind":"image","forbid":["video_generate"]}

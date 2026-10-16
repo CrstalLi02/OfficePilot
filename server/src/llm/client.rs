@@ -187,6 +187,15 @@ impl LlmClient {
         &self.model
     }
 
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
+        self
+    }
+
     /// 非流式 chat（带可选工具）
     pub async fn chat(
         &self,
