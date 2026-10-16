@@ -167,8 +167,41 @@ pub async fn create_file(
     description: Option<&str>,
     metadata: Option<Value>,
 ) -> AppResult<FileRow> {
+    // 自动保存的产物文件：同一产物只保留一个文件；新版本覆盖旧版本的内容
     if let Some(existing) = get_generated_artifact_file(pool, owner_id, metadata.as_ref()).await? {
-        return Ok(existing);
+        let version = |meta: Option<&Value>| meta.and_then(|m| m.get("artifact_version")).and_then(Value::as_i64).unwrap_or(1);
+        if version(metadata.as_ref()) <= version(existing.metadata.as_ref()) {
+            // 调用方刚写入的新文件用不上了，删掉避免残留
+            if existing.file_path != file_path {
+                let _ = tokio::fs::remove_file(file_path).await;
+            }
+            return Ok(existing);
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        let metadata_text = metadata.as_ref().map(Value::to_string);
+        sqlx::query("UPDATE files SET name = ?, file_path = ?, file_type = ?, file_size = ?, metadata = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
+            .bind(name)
+            .bind(file_path)
+            .bind(file_type)
+            .bind(file_size)
+            .bind(&metadata_text)
+            .bind(&now)
+            .bind(&existing.id)
+            .bind(owner_id)
+            .execute(pool)
+            .await?;
+        if existing.file_path != file_path {
+            let _ = tokio::fs::remove_file(&existing.file_path).await;
+        }
+        return Ok(FileRow {
+            name: name.to_string(),
+            file_path: file_path.to_string(),
+            file_type: file_type.to_string(),
+            file_size,
+            metadata,
+            updated_at: now,
+            ..existing
+        });
     }
 
     let id = uuid::Uuid::new_v4().to_string();

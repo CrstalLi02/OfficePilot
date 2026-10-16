@@ -110,6 +110,7 @@ async fn restore_version(
     )
     .await?;
     sync_ppt(&restored);
+    crate::file_store::save_artifact_to_files(&pool, &user.0.id, &restored, crate::file_store::SaveTarget::Generated).await;
     Ok(Json(json!({ "artifact": restored })))
 }
 
@@ -135,5 +136,6 @@ async fn save_user_edit(
     )
     .await?;
     sync_ppt(&saved);
+    crate::file_store::save_artifact_to_files(&pool, &user.0.id, &saved, crate::file_store::SaveTarget::Generated).await;
     Ok(Json(json!({ "artifact": saved })))
 }
