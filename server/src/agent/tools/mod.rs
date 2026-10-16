@@ -1,6 +1,7 @@
 pub mod agnes_media;
 pub mod artifact_edit;
 pub mod chart_generate;
+pub mod data_tools;
 pub mod doc_generate;
 pub mod drawio_generate;
 pub mod image_prompt;
@@ -55,6 +56,8 @@ pub async fn register_all_tools() {
     REGISTRY.register(Arc::new(propose_plan::ProposePlanTool)).await;
     REGISTRY.register(Arc::new(artifact_edit::ArtifactEditTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceListTool)).await;
+    REGISTRY.register(Arc::new(data_tools::DataProfileTool)).await;
+    REGISTRY.register(Arc::new(data_tools::DataQueryTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceSearchTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceReadTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceWriteTool)).await;
