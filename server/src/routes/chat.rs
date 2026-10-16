@@ -155,7 +155,7 @@ fn format_attachment_context(attachments: &[ChatAttachment]) -> String {
     )
 }
 
-fn build_user_message(req: &ChatRequest) -> String {
+pub fn build_user_message(req: &ChatRequest) -> String {
     let base = req.message.trim();
     let attachment_context = req
         .attachments
@@ -839,14 +839,17 @@ async fn save_generated_artifact_to_files(pool: &DbPool, owner_id: &str, artifac
     }
 }
 
-async fn chat_stream(
-    user: AuthUser,
-    Json(req): Json<ChatRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-    let pool = state::db_pool();
+/// 一次请求的工具路由结果：决定本轮暴露给 LLM 的工具和追加的系统提示词
+pub struct Routing {
+    pub resolved_tool_kind: Option<String>,
+    /// 追加到 OFFICE_AGENT_PROMPT 之后的内容（空串表示不追加）
+    pub system_prompt: String,
+    pub allowed_tools: Option<Vec<String>>,
+}
 
-    // ── 意图识别 ────────────────────────────────────────────────────────
-    let has_image = has_image_attachment(&req);
+/// 路由决策（chat_stream 与离线评测共用，保证评测的就是线上逻辑）
+pub fn resolve_routing(req: &ChatRequest) -> Routing {
+    let has_image = has_image_attachment(req);
     let intent_result = {
         let mut analyzer = intent_analyzer().lock().unwrap();
         analyzer.analyze(&req.message, &req.session_id.clone().unwrap_or_default(), has_image)
@@ -870,8 +873,41 @@ async fn chat_stream(
         }
     } else {
         // 低置信度时 fallback 到旧逻辑
-        infer_media_tool_kind(&req).or_else(|| req.tool_kind.clone())
+        infer_media_tool_kind(req).or_else(|| req.tool_kind.clone())
     };
+
+    // 构建意图上下文注入
+    let intent_addition = {
+        let analyzer = intent_analyzer().lock().unwrap();
+        analyzer.build_intent_context_addition(&intent_result)
+    };
+
+    // 用意图识别结果决定 allowed_tools
+    let allowed_tools = if intent_result.confidence >= 0.5 {
+        let analyzer = intent_analyzer().lock().unwrap();
+        analyzer.allowed_tools_for_intent(&intent_result)
+    } else {
+        allowed_tools_for_kind(resolved_tool_kind.as_deref())
+    };
+
+    Routing {
+        resolved_tool_kind,
+        system_prompt: intent_addition,
+        allowed_tools,
+    }
+}
+
+async fn chat_stream(
+    user: AuthUser,
+    Json(req): Json<ChatRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
+    let pool = state::db_pool();
+
+    let Routing {
+        resolved_tool_kind,
+        system_prompt,
+        allowed_tools,
+    } = resolve_routing(&req);
 
     let client = std::sync::Arc::new(crate::llm::LlmClient::for_user(
         &user.0.id,
@@ -927,27 +963,6 @@ async fn chat_stream(
     let user_id = user.0.id.clone();
     let project_id = req.project_id.clone();
     let user_message = build_user_message(&req);
-
-    // 构建意图上下文注入
-    let intent_addition = {
-        let analyzer = intent_analyzer().lock().unwrap();
-        analyzer.build_intent_context_addition(&intent_result)
-    };
-    let system_prompt = if intent_addition.is_empty() {
-        String::new() // 使用默认 OFFICE_AGENT_PROMPT
-    } else {
-        intent_addition // 仅注入意图补充，agent_loop 会拼接到 OFFICE_AGENT_PROMPT 后面
-    };
-
-    // 用意图识别结果决定 allowed_tools
-    let allowed_tools = if intent_result.confidence >= 0.5 {
-        {
-            let analyzer = intent_analyzer().lock().unwrap();
-            analyzer.allowed_tools_for_intent(&intent_result)
-        }
-    } else {
-        allowed_tools_for_kind(resolved_tool_kind.as_deref())
-    };
 
     let agent_config = AgentConfig {
         max_turns: 10,

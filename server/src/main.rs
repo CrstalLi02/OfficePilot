@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod eval;
 mod file_extract;
 mod image_ocr;
 mod llm;
@@ -23,6 +24,12 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "info,walioffice=debug".into()),
         )
         .init();
+
+    // 离线评测：walioffice eval [options]
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("eval") {
+        return eval::run(&args[2..]).await;
+    }
 
     // 加载配置
     let cfg = config::config();

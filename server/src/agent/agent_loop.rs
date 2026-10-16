@@ -158,6 +158,70 @@ const OFFICE_AGENT_PROMPT: &str = r#"你是一个智能办公 Agent，可以帮�
   - 图片结果：要有可直接预览的图像链接，同时保留风格化提示词，方便继续优化
   - 视频结果：要有可直接预览的视频链接，并说明视频时长、尺寸、生成模式和适用场景"#;
 
+/// 第一轮发给 LLM 的完整请求（系统提示词 + 历史 + 用户消息，以及暴露的工具）
+pub struct InitialRequest {
+    pub conversation: Vec<ChatMessage>,
+    pub function_defs: Vec<FunctionDef>,
+}
+
+/// 组装第一轮请求（agent 循环与离线评测共用）
+pub async fn build_initial_request(
+    history: Vec<ChatMessage>,
+    user_message: &str,
+    user_attachments: &[crate::models::ChatAttachment],
+    config: &AgentConfig,
+    client: &crate::llm::LlmClient,
+) -> InitialRequest {
+    let system_prompt = if config.system_prompt.is_empty() {
+        OFFICE_AGENT_PROMPT.to_string()
+    } else {
+        // system_prompt 作为意图上下文补充，拼接到 OFFICE_AGENT_PROMPT 后面
+        format!("{}\n{}", OFFICE_AGENT_PROMPT, config.system_prompt)
+    };
+
+    // 获取工具定义
+    let allowed_tool_names = config.allowed_tools.clone();
+    let mut function_defs: Vec<FunctionDef> = if let Some(ref allowed) = allowed_tool_names {
+        REGISTRY
+            .to_function_defs()
+            .await
+            .into_iter()
+            .filter(|d| allowed.contains(&d.function.name))
+            .collect()
+    } else {
+        REGISTRY.to_function_defs().await
+    };
+    // 有图片附件时，LLM 可以直接结合视觉输入回答，不需要额外工具
+    if user_attachments.iter().any(|item| item.kind == "image") && allowed_tool_names.is_none() {
+        function_defs.clear();
+    }
+
+    // 上下文压缩
+    let compacted = compact_context(history, &DEFAULT_CONTEXT_CONFIG, client).await;
+
+    // 组装消息
+    let mut conversation: Vec<ChatMessage> = vec![ChatMessage {
+        role: "system".to_string(),
+        content: system_prompt,
+        tool_calls: None,
+        tool_call_id: None,
+    }];
+    // 保留最近 8 条历史
+    let hist_start = compacted.len().saturating_sub(8);
+    conversation.extend(compacted[hist_start..].to_vec());
+    conversation.push(ChatMessage {
+        role: "user".to_string(),
+        content: user_message.to_string(),
+        tool_calls: None,
+        tool_call_id: None,
+    });
+
+    InitialRequest {
+        conversation,
+        function_defs,
+    }
+}
+
 /// 运行 Agent 循环，通过 channel 推送事件
 pub async fn run_agent_loop(
     history: Vec<ChatMessage>,
@@ -172,53 +236,11 @@ pub async fn run_agent_loop(
     let client = client.clone();
     tokio::spawn(async move {
         let max_turns = config.max_turns;
-        let system_prompt = if config.system_prompt.is_empty() {
-            OFFICE_AGENT_PROMPT.to_string()
-        } else {
-            // system_prompt 作为意图上下文补充，拼接到 OFFICE_AGENT_PROMPT 后面
-            format!("{}\n{}", OFFICE_AGENT_PROMPT, config.system_prompt)
-        };
-
-        // 获取工具定义
         let all_tools = REGISTRY.list().await;
-        let allowed_tool_names = config.allowed_tools.clone();
-        let mut function_defs: Vec<FunctionDef> = if let Some(ref allowed) = allowed_tool_names {
-            REGISTRY
-                .to_function_defs()
-                .await
-                .into_iter()
-                .filter(|d| allowed.contains(&d.function.name))
-                .collect()
-        } else {
-            REGISTRY.to_function_defs().await
-        };
-        // 有图片附件时，LLM 可以直接结合视觉输入回答，不需要额外工具
-        // 但仍保留工具定义，让 LLM 决定是否调用
-        if user_attachments.iter().any(|item| item.kind == "image")
-            && allowed_tool_names.is_none()
-        {
-            function_defs.clear();
-        }
-
-        // 上下文压缩
-        let compacted = compact_context(history, &DEFAULT_CONTEXT_CONFIG, &client).await;
-
-        // 组装消息
-        let mut conversation: Vec<ChatMessage> = vec![ChatMessage {
-            role: "system".to_string(),
-            content: system_prompt,
-            tool_calls: None,
-            tool_call_id: None,
-        }];
-        // 保留最近 8 条历史
-        let hist_start = compacted.len().saturating_sub(8);
-        conversation.extend(compacted[hist_start..].to_vec());
-        conversation.push(ChatMessage {
-            role: "user".to_string(),
-            content: user_message.clone(),
-            tool_calls: None,
-            tool_call_id: None,
-        });
+        let InitialRequest {
+            mut conversation,
+            function_defs,
+        } = build_initial_request(history, &user_message, &user_attachments, &config, &client).await;
 
         let mut all_artifacts: Vec<Artifact> = Vec::new();
 
