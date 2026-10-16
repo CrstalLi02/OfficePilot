@@ -22,6 +22,8 @@ pub struct ToolContext {
     pub scratchpad: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     /// 用户工具配置（前端传入，如视频时长、宽高比等）
     pub tool_config: Option<serde_json::Value>,
+    /// 当前工具调用的 id；并行执行时用来区分各工具推送的进度事件
+    pub call_id: Option<String>,
 }
 
 impl ToolContext {
@@ -43,7 +45,24 @@ impl ToolContext {
             emit: Arc::new(emit),
             scratchpad: Arc::new(Mutex::new(HashMap::new())),
             tool_config: None,
+            call_id: None,
         }
+    }
+
+    /// 为单次工具调用派生上下文：推送的对象型事件自动带上 `call_id`
+    pub fn for_call(&self, call_id: &str) -> Self {
+        let inner = self.emit.clone();
+        let id = call_id.to_string();
+        let mut ctx = self.clone();
+        ctx.call_id = Some(id.clone());
+        ctx.emit = Arc::new(move |event: &str, mut data: serde_json::Value| {
+            if let Some(obj) = data.as_object_mut() {
+                obj.entry("call_id")
+                    .or_insert_with(|| serde_json::Value::String(id.clone()));
+            }
+            inner(event, data);
+        });
+        ctx
     }
 
     pub fn with_tool_config(mut self, config: serde_json::Value) -> Self {
@@ -130,6 +149,11 @@ pub trait OfficeTool: Send + Sync {
         false
     }
     fn produces_artifact(&self) -> bool {
+        true
+    }
+    /// 能否与同一轮的其他工具并发执行。依赖 scratchpad 或有先后顺序的工具返回 false，
+    /// 调度时作为屏障单独串行执行
+    fn parallel_safe(&self) -> bool {
         true
     }
 

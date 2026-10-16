@@ -8,6 +8,7 @@ use std::convert::Infallible;
 use std::path::{Path as FsPath, PathBuf};
 use std::time::Duration;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 
 use crate::agent::{run_agent_loop, AgentConfig, AgentEvent, IntentAnalyzer};
 use crate::auth::middleware::AuthUser;
@@ -18,7 +19,73 @@ use crate::render;
 use crate::state;
 
 pub fn router() -> Router {
-    Router::new().route("/api/chat/stream", post(chat_stream))
+    Router::new()
+        .route("/api/chat/stream", post(chat_stream))
+        .route("/api/chat/cancel", post(chat_cancel))
+}
+
+/// 正在运行的 Agent 任务
+struct ActiveRun {
+    run_id: String,
+    owner_id: String,
+    cancel: CancellationToken,
+}
+
+/// session_id → 当前运行
+static ACTIVE_RUNS: once_cell::sync::Lazy<
+    std::sync::Mutex<std::collections::HashMap<String, ActiveRun>>,
+> = once_cell::sync::Lazy::new(Default::default);
+
+/// 登记一次运行，返回 (run_id, 取消令牌)；同一会话已有运行时先取消旧的
+fn register_run(session_id: &str, owner_id: &str) -> (String, CancellationToken) {
+    let run = ActiveRun {
+        run_id: uuid::Uuid::new_v4().to_string(),
+        owner_id: owner_id.to_string(),
+        cancel: CancellationToken::new(),
+    };
+    let handle = (run.run_id.clone(), run.cancel.clone());
+    if let Some(previous) = ACTIVE_RUNS
+        .lock()
+        .unwrap()
+        .insert(session_id.to_string(), run)
+    {
+        previous.cancel.cancel();
+    }
+    handle
+}
+
+/// 运行结束时注销（只移除自己登记的那一次，避免误删同会话新一轮的登记）
+fn unregister_run(session_id: &str, run_id: &str) {
+    let mut runs = ACTIVE_RUNS.lock().unwrap();
+    if runs.get(session_id).is_some_and(|run| run.run_id == run_id) {
+        runs.remove(session_id);
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CancelRequest {
+    session_id: String,
+}
+
+/// 停止某个会话正在运行的 Agent
+async fn chat_cancel(
+    user: AuthUser,
+    Json(req): Json<CancelRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let token = {
+        let runs = ACTIVE_RUNS.lock().unwrap();
+        runs.get(&req.session_id)
+            .filter(|run| run.owner_id == user.0.id)
+            .map(|run| run.cancel.clone())
+    };
+    let cancelled = match token {
+        Some(token) => {
+            token.cancel();
+            true
+        }
+        None => false,
+    };
+    Ok(Json(serde_json::json!({ "cancelled": cancelled })))
 }
 
 fn looks_like_markdown_document(content: &str) -> bool {
@@ -1004,6 +1071,14 @@ async fn chat_stream(
         );
     }
 
+    // 登记运行，前端凭 session_id 调用 /api/chat/cancel 停止
+    let (run_id, cancel) = register_run(&session_id, &user_id);
+    let _ = sse_tx
+        .send(Ok(Event::default().event("run_start").data(
+            serde_json::json!({ "session_id": session_id, "run_id": run_id }).to_string(),
+        )))
+        .await;
+
     // 启动 agent 循环
     let mut event_rx = run_agent_loop(
         history,
@@ -1012,40 +1087,53 @@ async fn chat_stream(
         ctx,
         agent_config,
         client.clone(),
+        cancel,
     )
     .await;
     let requested_tool_kind = resolved_tool_kind.clone();
 
     tokio::spawn(async move {
-        let mut final_summary = String::new();
+        let mut total_usage = crate::llm::Usage::default();
         let mut collected_artifacts: Vec<crate::models::Artifact> = Vec::new();
         let mut saved_artifact_ids = HashSet::new();
 
         while let Some(event) = event_rx.recv().await {
             let sse_event = match &event {
-                AgentEvent::Thinking { content } => {
-                    Event::default().event("state_update").data(serde_json::json!({
-                        "phase": "running",
-                        "step": "Agent 思考中",
-                        "detail": content,
-                        "at": chrono::Utc::now().to_rfc3339(),
-                    }).to_string())
-                }
-                AgentEvent::ToolCall { tool, input } => {
-                    Event::default().event("state_update").data(serde_json::json!({
-                        "phase": "running",
-                        "step": format!("调用工具: {tool}"),
-                        "detail": serde_json::to_string(input).unwrap_or_default().chars().take(200).collect::<String>(),
-                        "at": chrono::Utc::now().to_rfc3339(),
-                    }).to_string())
-                }
-                AgentEvent::ToolResult { tool, success, result, error } => {
+                AgentEvent::TextDelta { text } => Some(
+                    Event::default().event("message").data(serde_json::json!({
+                        "text": text,
+                        "session_id": session_id_for_save,
+                    }).to_string()),
+                ),
+                AgentEvent::ToolStart { call_id, tool } => Some(
+                    Event::default().event("tool_start").data(serde_json::json!({
+                        "call_id": call_id,
+                        "tool": tool,
+                    }).to_string()),
+                ),
+                AgentEvent::ToolCall { call_id, tool, input } => Some(
+                    Event::default().event("tool_call").data(serde_json::json!({
+                        "call_id": call_id,
+                        "tool": tool,
+                        "input": input,
+                    }).to_string()),
+                ),
+                AgentEvent::ToolResult { call_id, tool, success, result, error, duration_ms } => Some(
                     Event::default().event("tool_result").data(serde_json::json!({
+                        "call_id": call_id,
                         "tool": tool,
                         "success": success,
                         "result": result,
                         "error": error,
-                    }).to_string())
+                        "duration_ms": duration_ms,
+                    }).to_string()),
+                ),
+                AgentEvent::Usage { usage } => {
+                    total_usage.add(*usage);
+                    Some(Event::default().event("usage").data(serde_json::json!({
+                        "prompt_tokens": total_usage.prompt_tokens,
+                        "completion_tokens": total_usage.completion_tokens,
+                    }).to_string()))
                 }
                 AgentEvent::Artifact { artifact } => {
                     collected_artifacts.push(artifact.clone());
@@ -1066,30 +1154,24 @@ async fn chat_stream(
                         &session_id_for_save,
                         &session_artifacts,
                     ).await;
-                    Event::default().event("artifact_update").data(serde_json::json!({
+                    Some(Event::default().event("artifact_update").data(serde_json::json!({
                         "artifact": artifact,
                         "artifacts": session_artifacts,
                         "session_id": session_id_for_save,
                         "tool_kind": artifact.tool_kind,
-                    }).to_string())
+                    }).to_string()))
                 }
-                AgentEvent::Message { content } => {
-                    final_summary = content.clone();
-                    Event::default().event("message").data(serde_json::json!({
-                        "text": content,
-                        "session_id": session_id_for_save,
-                    }).to_string())
-                }
-                AgentEvent::TurnEnd { turn } => {
+                // 文本已通过 TextDelta 推送，这里只用于持久化
+                AgentEvent::Message { .. } => None,
+                AgentEvent::TurnEnd { turn } => Some(
                     Event::default().event("state_update").data(serde_json::json!({
                         "phase": "running",
                         "step": format!("第 {turn} 轮完成"),
                         "detail": format!("已完成 {turn} 轮工具调用"),
                         "at": chrono::Utc::now().to_rfc3339(),
-                    }).to_string())
-                }
-                AgentEvent::Done { summary, artifacts } => {
-                    final_summary = summary.clone();
+                    }).to_string()),
+                ),
+                AgentEvent::Done { summary, artifacts, cancelled } => {
                     if collected_artifacts.is_empty() {
                         collected_artifacts = artifacts.clone();
                     }
@@ -1123,20 +1205,25 @@ async fn chat_stream(
                         &session_id_for_save,
                         &session_artifacts,
                     ).await;
-                    Event::default().event("done").data(serde_json::json!({
+                    Some(Event::default().event("done").data(serde_json::json!({
                         "session_id": session_id_for_save,
                         "summary": summary,
                         "artifacts": session_artifacts,
                         "new_artifacts": collected_artifacts,
-                    }).to_string())
+                        "cancelled": cancelled,
+                        "usage": total_usage,
+                    }).to_string()))
                 }
-                AgentEvent::Error { message } => {
+                AgentEvent::Error { message } => Some(
                     Event::default().event("error").data(serde_json::json!({
                         "message": message,
-                    }).to_string())
-                }
+                    }).to_string()),
+                ),
             };
-            let _ = sse_tx.send(Ok(sse_event)).await;
+            if let Some(sse_event) = sse_event {
+                // 前端断开（刷新/关页）不中断任务：继续执行并保存产物，只有显式停止才取消
+                let _ = sse_tx.send(Ok(sse_event)).await;
+            }
 
             // 保存 assistant 消息
             if let AgentEvent::Message { content } = &event {
@@ -1150,6 +1237,7 @@ async fn chat_stream(
                     session_repo::add_message(&pool_for_save, &session_id_for_save, &assistant_msg).await;
             }
         }
+        unregister_run(&session_id_for_save, &run_id);
     });
 
     let stream = ReceiverStream::new(sse_rx);
