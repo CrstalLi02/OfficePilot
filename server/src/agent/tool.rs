@@ -14,8 +14,9 @@ pub struct ToolContext {
     pub project_id: Option<String>,
     pub preferred_model: Option<String>,
     pub attachments: Vec<ChatAttachment>,
-    /// 当前会话中已有的产物历史（用于跨工具引用，如视频工具引用之前的图片产物）
-    pub prior_artifacts: Vec<Artifact>,
+    /// 会话产物（请求开始时的产物 + 本次运行中新生成或修改的产物，由 agent 循环实时更新），
+    /// 用于跨工具引用：视频工具引用之前的图片、批量生成读取分镜、artifact_edit 读取最新版本
+    session_artifacts: Arc<std::sync::RwLock<Vec<Artifact>>>,
     /// SSE 推送回调（向前端发送实时进度）
     pub emit: Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>,
     /// 共享上下文（跨工具传递，如 PPT 大纲规划）
@@ -41,7 +42,7 @@ impl ToolContext {
             project_id,
             preferred_model,
             attachments,
-            prior_artifacts: Vec::new(),
+            session_artifacts: Arc::new(std::sync::RwLock::new(Vec::new())),
             emit: Arc::new(emit),
             scratchpad: Arc::new(Mutex::new(HashMap::new())),
             tool_config: None,
@@ -71,9 +72,21 @@ impl ToolContext {
     }
 
     /// 设置会话中已有的产物历史
-    pub fn with_prior_artifacts(mut self, artifacts: Vec<Artifact>) -> Self {
-        self.prior_artifacts = artifacts;
+    pub fn with_prior_artifacts(self, artifacts: Vec<Artifact>) -> Self {
+        *self.session_artifacts.write().unwrap() = artifacts;
         self
+    }
+
+    /// 当前会话产物快照（最新的在前）
+    pub fn artifacts(&self) -> Vec<Artifact> {
+        self.session_artifacts.read().unwrap().clone()
+    }
+
+    /// 记录本次运行中新生成或修改的产物（同 id 替换为新版本）
+    pub fn upsert_artifact(&self, artifact: Artifact) {
+        let mut artifacts = self.session_artifacts.write().unwrap();
+        artifacts.retain(|a| a.id != artifact.id);
+        artifacts.insert(0, artifact);
     }
 
     /// 获取工具配置中的某个字段值
@@ -97,6 +110,15 @@ pub struct ToolArtifact {
     pub content: serde_json::Value,
 }
 
+/// 对已有产物的修订（artifact_edit 等）：agent 循环据此生成同 id、版本号 +1 的产物
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactRevision {
+    pub base: Artifact,
+    pub title: String,
+    pub content: serde_json::Value,
+    pub change_summary: String,
+}
+
 /// 工具结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
@@ -111,6 +133,8 @@ pub struct ToolResult {
     pub observation: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub continue_loop: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<ArtifactRevision>,
 }
 
 impl ToolResult {
@@ -122,6 +146,7 @@ impl ToolResult {
             artifacts: Some(artifacts),
             observation: observation.into(),
             continue_loop: None,
+            revision: None,
         }
     }
 
@@ -134,7 +159,15 @@ impl ToolResult {
             artifacts: None,
             observation: obs,
             continue_loop: None,
+            revision: None,
         }
+    }
+
+    /// 修订已有产物的成功结果
+    pub fn revised(observation: impl Into<String>, revision: ArtifactRevision) -> Self {
+        let mut result = Self::ok(observation, vec![]);
+        result.revision = Some(revision);
+        result
     }
 }
 

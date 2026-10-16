@@ -123,9 +123,9 @@ impl OfficeTool for VideoBatchGenerateTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        // ---- 从 prior_artifacts 中查找分镜 artifact ----
+        // ---- 从会话产物中查找分镜 artifact ----
         let storyboard_artifact = ctx
-            .prior_artifacts
+            .artifacts()
             .iter()
             .find(|a| a.id == storyboard_id)
             .cloned();

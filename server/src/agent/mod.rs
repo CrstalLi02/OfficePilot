@@ -1,4 +1,5 @@
 pub mod agent_loop;
+pub mod artifact_ops;
 pub mod context;
 pub mod plan;
 pub mod registry;

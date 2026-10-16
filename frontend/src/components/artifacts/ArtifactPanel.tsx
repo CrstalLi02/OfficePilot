@@ -10,6 +10,7 @@ import { SlideList } from '@/components/slides/SlideList'
 import { SlidePreview } from '@/components/preview/SlidePreview'
 import { Toolbar } from '@/components/toolbar/Toolbar'
 import { WordPreview } from '@/components/artifacts/WordPreview'
+import { VersionBar } from '@/components/artifacts/VersionBar'
 import type { Artifact, ChatMessage, PPTProject, Slide, ToolKind } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 
@@ -38,6 +39,10 @@ interface ArtifactPanelProps {
   onExportDrawio: (artifact: Artifact) => void
   onInsertArtifact: (artifact: Artifact) => void
   isMobile?: boolean
+  /** 当前会话 id（版本历史需要） */
+  sessionId?: string | null
+  /** 版本恢复后用服务端的新版本替换当前产物 */
+  onArtifactReplaced?: (artifact: Artifact) => void
 }
 
 function createFallbackDrawioXml(title = '综合 Agent 工作台流程') {
@@ -839,6 +844,8 @@ export function ArtifactPanel({
   onExportDrawio,
   onInsertArtifact,
   isMobile,
+  sessionId = null,
+  onArtifactReplaced,
 }: ArtifactPanelProps) {
   const [panelWidth, setPanelWidth] = useState(isWide ? 760 : 560)
   const draggingRef = useRef(false)
@@ -886,11 +893,14 @@ export function ArtifactPanel({
   const effectiveTool = activeArtifact?.tool_kind || activeTool
   const headerTitle = activeArtifact?.title || titleMap[effectiveTool] || '成果展示'
   const canExportActiveArtifact = activeArtifact?.kind === 'document' || activeArtifact?.kind === 'markdown' || activeArtifact?.kind === 'sheet' || activeArtifact?.kind === 'drawio'
+  const versionBar = activeArtifact && onArtifactReplaced && !['image', 'video', 'search'].includes(activeArtifact.kind) ? (
+    <VersionBar artifact={activeArtifact} sessionId={sessionId} onReplaced={onArtifactReplaced} />
+  ) : null
 
   // 移动端全屏覆盖模式
   if (isMobile) {
     return (
-      <div className="flex h-full w-full flex-col bg-white">
+      <div className="relative flex h-full w-full flex-col bg-white">
         {/* 移动端顶栏 */}
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-surface-100 bg-white/90 px-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -903,6 +913,7 @@ export function ArtifactPanel({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {versionBar}
             {effectiveTool === 'ppt' && (
               <>
                 <button className="btn-secondary h-8 px-2.5 text-xs" disabled={!project} onClick={onPresent}>演示</button>
@@ -1002,6 +1013,7 @@ export function ArtifactPanel({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          {versionBar}
           {effectiveTool === 'ppt' && (
             <>
               <button className="btn-secondary h-8 px-2.5 text-xs" disabled={!project} onClick={onPresent}>演示</button>

@@ -149,7 +149,7 @@ fn collect_video_images(ctx: &ToolContext, input: &serde_json::Value) -> Vec<Str
     // P2: 从会话历史产物中提取图片 URL
     // 当用户说"用刚才那张图""用上面的图片做视频"等，自动从 prior_artifacts 中找图片
     if images.is_empty() {
-        images.extend(extract_image_urls_from_artifacts(&ctx.prior_artifacts));
+        images.extend(extract_image_urls_from_artifacts(&ctx.artifacts()));
     }
 
     images
@@ -603,8 +603,8 @@ impl OfficeTool for VideoGenerateTool {
             .unwrap_or(5);
 
         let image_inputs = collect_video_images(ctx, &input);
-        let audio_inputs = collect_video_audios(&input, &ctx.prior_artifacts);
-        let video_refs = collect_video_refs(&input, &ctx.prior_artifacts);
+        let audio_inputs = collect_video_audios(&input, &ctx.artifacts());
+        let video_refs = collect_video_refs(&input, &ctx.artifacts());
 
         let config_mode = ctx.get_config::<String>("mode");
         let input_mode = config_mode
@@ -677,7 +677,7 @@ impl OfficeTool for VideoGenerateTool {
         };
 
         // ---- 提取历史产物中的文字内容作为视频文案素材 ----
-        let text_refs = extract_text_content_from_artifacts(&ctx.prior_artifacts);
+        let text_refs = extract_text_content_from_artifacts(&ctx.artifacts());
         let reference_text = if text_refs.is_empty() {
             String::new()
         } else {
