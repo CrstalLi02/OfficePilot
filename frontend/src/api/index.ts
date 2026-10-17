@@ -277,6 +277,58 @@ export const schedulesApi = {
   preview: (cron: string, timezone?: string) => api.post<{ description: string; timezone: string; next_runs: string[] }>('/schedules/preview', { cron, timezone }),
 };
 
+// ===== IM 接入 API =====
+export interface ImChannelConfig {
+  app_id: string;
+  domain: 'feishu' | 'lark';
+  connection: 'ws' | 'webhook';
+  default_mode: 'craft' | 'plan' | 'ask';
+  timezone: string;
+}
+
+export interface ImChannel {
+  id: string;
+  platform: 'feishu' | string;
+  name: string;
+  config: ImChannelConfig;
+  has_app_secret: boolean;
+  has_verification_token: boolean;
+  has_encrypt_key: boolean;
+  secrets_broken: boolean;
+  enabled: boolean;
+  created_at: string;
+  status: { state: string; error?: string | null; bot_name?: string | null; last_event_at?: string | null };
+}
+
+export interface ImChannelInput {
+  platform?: string;
+  name: string;
+  config: ImChannelConfig;
+  /** 留空表示不修改 */
+  app_secret?: string;
+  verification_token?: string;
+  encrypt_key?: string;
+  enabled?: boolean;
+}
+
+export interface ImBinding {
+  id: string;
+  im_user_id: string;
+  display_name?: string | null;
+  created_at: string;
+}
+
+export const imApi = {
+  list: () => api.get<{ channels: ImChannel[] }>('/im/channels'),
+  create: (input: ImChannelInput) => api.post<ImChannel>('/im/channels', input),
+  update: (id: string, input: ImChannelInput) => api.put<ImChannel>(`/im/channels/${id}`, input),
+  remove: (id: string) => api.delete(`/im/channels/${id}`),
+  test: (id: string) => api.post<{ ok: boolean; bot_name?: string; error?: string }>(`/im/channels/${id}/test`),
+  bindCode: (id: string) => api.post<{ code: string; expires_in: number }>(`/im/channels/${id}/bind-code`),
+  bindings: (id: string) => api.get<{ bindings: ImBinding[] }>(`/im/channels/${id}/bindings`),
+  unbind: (id: string, bindingId: string) => api.delete(`/im/channels/${id}/bindings/${bindingId}`),
+};
+
 // ===== 后台任务 API =====
 export interface AgentTask {
   id: string;

@@ -13,6 +13,7 @@ mod models;
 mod render;
 mod routes;
 mod schedules;
+mod im;
 mod skills;
 mod state;
 mod tasks;
@@ -54,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 定时任务调度循环
     schedules::spawn_scheduler();
+    tokio::spawn(im::manager::start_all());
 
     // 注册 Agent 工具
     agent::tools::register_all_tools().await;

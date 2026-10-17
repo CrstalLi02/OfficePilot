@@ -1,6 +1,7 @@
-import { Check, KeyRound, Plus, Trash2, X } from 'lucide-react'
+import { Check, KeyRound, MessageSquare, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { settingsApi } from '@/api'
+import { ImChannelsPanel } from './ImChannelsPanel'
 import type { AppSettings, LLMProfile, MCPServiceConfig } from '@/types'
 
 interface SettingsDialogProps {
@@ -38,7 +39,7 @@ const emptyMcpServer = (): MCPServiceConfig => ({
 })
 
 export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDialogProps) {
-  const [section, setSection] = useState<'llm' | 'base' | 'mcp'>('mcp')
+  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im'>('mcp')
   const [draft, setDraft] = useState<AppSettings | null>(settings)
   const [saving, setSaving] = useState(false)
   const [testingMcpId, setTestingMcpId] = useState<string | null>(null)
@@ -155,10 +156,10 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
   const activeProfile = draft.llm_profiles.find((profile) => profile.id === draft.active_profile_id) || draft.llm_profiles[0]
 
   return (
-    <div className="h-full overflow-hidden bg-transparent p-5">
-      <div className="mx-auto flex h-full max-w-6xl overflow-hidden rounded-[2rem] border border-black/[0.06] bg-white/72 shadow-[0_24px_80px_rgba(24,24,27,0.10)] backdrop-blur-2xl">
-        <aside className="w-56 shrink-0 border-r border-black/[0.06] bg-[#eee9df]/70 p-4">
-          <div className="mb-5 flex items-center justify-between">
+    <div className="h-full overflow-hidden bg-transparent p-2 md:p-5">
+      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-[2rem] md:flex-row border border-black/[0.06] bg-white/72 shadow-[0_24px_80px_rgba(24,24,27,0.10)] backdrop-blur-2xl">
+        <aside className="shrink-0 border-b border-black/[0.06] bg-[#eee9df]/70 p-3 md:w-56 md:border-b-0 md:border-r md:p-4">
+          <div className="mb-3 flex items-center justify-between md:mb-5">
             <div>
               <div className="text-lg font-bold tracking-tight text-surface-950">设置</div>
             </div>
@@ -167,15 +168,16 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
             </button>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="flex gap-1.5 overflow-x-auto md:block md:space-y-1.5">
             {[
               ['mcp', 'MCP 服务', KeyRound],
+              ['im', 'IM 接入', MessageSquare],
             ].map(([key, label, Icon]: any) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setSection(key)}
-                className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${section === key ? 'bg-surface-950 text-white shadow-sm' : 'text-surface-600 hover:bg-white/75 hover:text-surface-950'}`}
+                className={`flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2.5 md:w-full text-left text-sm font-semibold transition-all ${section === key ? 'bg-surface-950 text-white shadow-sm' : 'text-surface-600 hover:bg-white/75 hover:text-surface-950'}`}
               >
                 <Icon className="h-4 w-4" />
                 {label}
@@ -184,7 +186,7 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6">
           {section === 'llm' && (
             <div>
               <div className="mb-5 flex items-start justify-between gap-4">
@@ -345,6 +347,8 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
             </div>
           )}
 
+          {section === 'im' && <ImChannelsPanel />}
+
           {section === 'mcp' && (
             <div>
               <div className="mb-5 flex items-start justify-between gap-4">
@@ -446,7 +450,8 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
             </div>
           )}
 
-          <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
+          {/* IM 接入的修改即时保存，不需要底部的保存按钮 */}
+          {section !== 'im' && <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
             <button onClick={onClose} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-surface-600 hover:bg-surface-50">
               取消
             </button>
@@ -457,7 +462,7 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
             >
               {saving ? '保存中...' : '保存设置'}
             </button>
-          </div>
+          </div>}
         </main>
       </div>
     </div>
