@@ -743,7 +743,8 @@ pub async fn start_chat_task(
         if final_status == "failed" && final_summary.is_none() {
             sink.emit("error", serde_json::json!({ "message": final_error.clone().unwrap_or_default() }));
         }
-        let unwatched = sink.watchers() == 0;
+        // IM 发起的任务由 IM 订阅回推，不算网页上有人在看
+        let unwatched = sink.watchers() == 0 || origin == crate::tasks::Origin::Im;
         crate::tasks::finish(&pool_for_save, &sink, final_status, final_summary.as_deref(), final_error.as_deref()).await;
         // 没有页面在看时（关掉了页面、定时任务、IM），完成后发通知
         if unwatched && final_status != "cancelled" {

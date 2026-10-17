@@ -97,6 +97,9 @@ async fn run_migrations_sqlite(pool: &sqlx::SqlitePool) -> Result<()> {
     sqlx::raw_sql(include_str!("../../../migrations/007_schedules.sql"))
         .execute(pool)
         .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/008_im.sql"))
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -134,6 +137,9 @@ async fn run_migrations_mysql(pool: &sqlx::MySqlPool) -> Result<()> {
         .execute(pool)
         .await?;
     sqlx::raw_sql(include_str!("../../../migrations/007_schedules_mysql.sql"))
+        .execute(pool)
+        .await?;
+    sqlx::raw_sql(include_str!("../../../migrations/008_im_mysql.sql"))
         .execute(pool)
         .await?;
     Ok(())

@@ -21,7 +21,7 @@ async-stream = "0.3"
 futures = "0.3"
 
 # HTTP client for LLM
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 eventsource-stream = "0.2"
 
 # Database
@@ -63,6 +63,13 @@ datafusion = { version = "54.1", default-features = false, features = ["sql", "m
 calamine = { version = "0.36", features = ["dates"] }
 # 定时任务：cron 表达式（5 段，支持 L / W / #）与时区
 croner = "4"
+# IM 远程控制：飞书长连接（WebSocket）、事件解密、密钥加密存储
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+aes-gcm = "0.10"
+sha2 = "0.10"
+hex = "0.4"
 chrono-tz = "0.10"
 # GBK 编码的 CSV（国内 Excel 导出常见）
 encoding_rs = "0.8"

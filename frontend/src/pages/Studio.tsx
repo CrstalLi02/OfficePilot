@@ -12,7 +12,7 @@ import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SkillsDialog } from '@/components/skills/SkillsDialog'
 import { TasksDialog } from '@/components/tasks/TasksDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
-import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu, ListChecks } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu, ListChecks, Settings } from 'lucide-react'
 import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
@@ -2138,6 +2138,13 @@ export default function Studio() {
                 title="我的文件"
               >
                 <Files className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setActiveView(activeView === 'settings' ? 'chat' : 'settings')}
+                className={`btn-ghost shrink-0 rounded-full hover:bg-white/75 ${activeView === 'settings' ? 'bg-white/90' : 'bg-white/45'}`}
+                title="设置（MCP 服务、IM 接入）"
+              >
+                <Settings className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setShowArtifactPanel(!showArtifactPanel)}
