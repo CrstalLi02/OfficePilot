@@ -25,6 +25,8 @@ pub struct ToolContext {
     pub tool_config: Option<serde_json::Value>,
     /// 当前工具调用的 id；并行执行时用来区分各工具推送的进度事件
     pub call_id: Option<String>,
+    /// 用户时区（IANA 名称），未提供时为 None
+    pub timezone: Option<String>,
 }
 
 impl ToolContext {
@@ -47,7 +49,13 @@ impl ToolContext {
             scratchpad: Arc::new(Mutex::new(HashMap::new())),
             tool_config: None,
             call_id: None,
+            timezone: None,
         }
+    }
+
+    pub fn with_timezone(mut self, timezone: Option<String>) -> Self {
+        self.timezone = timezone.filter(|t| !t.trim().is_empty());
+        self
     }
 
     /// 为单次工具调用派生上下文：推送的对象型事件自动带上 `call_id`

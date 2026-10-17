@@ -61,3 +61,7 @@
 {"id": "skill-official", "category": "skill", "message": "写一份关于开展年度消防安全检查的通知，发给各部门", "expect_any": ["use_skill", "doc_generate"], "forbid": ["ppt_plan", "image_prompt"]}
 {"id": "skill-resume", "category": "skill", "message": "帮我对照这个 AI Agent 开发岗位的 JD 优化一下简历里的项目经历", "expect_any": ["use_skill", "workspace_search", "workspace_read", "md_generate"], "forbid": ["video_generate", "image_prompt"]}
 {"id": "skill-competitor", "category": "skill", "message": "做一份国内 AI 办公助手的竞品分析", "expect_any": ["use_skill", "web_search", "propose_plan"], "forbid": ["video_generate"]}
+{"id": "schedule-weekly-report", "category": "schedule", "message": "每周五下午五点帮我写本周周报", "expect": ["schedule_create"], "forbid": ["doc_generate", "md_generate"]}
+{"id": "schedule-daily-news", "category": "schedule", "message": "以后每天早上9点帮我整理一份AI行业新闻简报", "expect": ["schedule_create"], "forbid": ["video_generate"]}
+{"id": "schedule-monthly", "category": "schedule", "message": "每个月1号提醒我整理上个月的报销单据，生成一份清单", "expect": ["schedule_create"], "forbid": ["video_generate", "image_prompt"]}
+{"id": "schedule-list", "category": "schedule", "message": "我现在都设置了哪些定时任务？", "expect": ["schedule_list"], "forbid": ["schedule_create"]}

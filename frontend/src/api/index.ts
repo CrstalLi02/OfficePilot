@@ -228,6 +228,55 @@ async function readSse(response: Response, onEvent: (event: string, data: any) =
   }
 }
 
+/** 浏览器时区（IANA 名称），用于定时任务与“今天 / 下周五”这类时间理解 */
+export function browserTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ===== 定时任务 API =====
+export interface Schedule {
+  id: string;
+  name: string;
+  prompt: string;
+  cron: string;
+  timezone: string;
+  description: string;
+  mode: AgentMode;
+  skills: string[];
+  session_strategy: 'new' | 'same';
+  session_id?: string | null;
+  enabled: boolean;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  last_task_id?: string | null;
+  created_at: string;
+}
+
+export interface ScheduleInput {
+  name: string;
+  prompt: string;
+  cron: string;
+  timezone?: string;
+  mode?: AgentMode;
+  skills?: string[];
+  session_strategy?: 'new' | 'same';
+  enabled?: boolean;
+}
+
+export const schedulesApi = {
+  list: () => api.get<{ schedules: Schedule[] }>('/schedules'),
+  create: (input: ScheduleInput) => api.post<Schedule>('/schedules', input),
+  update: (id: string, input: ScheduleInput) => api.put<Schedule>(`/schedules/${id}`, input),
+  remove: (id: string) => api.delete(`/schedules/${id}`),
+  runNow: (id: string) => api.post<{ status: string; message?: string; task_id?: string; session_id?: string }>(`/schedules/${id}/run`),
+  runs: (id: string) => api.get<{ runs: Array<{ task_id?: string | null; status: string; message?: string | null; created_at: string }> }>(`/schedules/${id}/runs`),
+  preview: (cron: string, timezone?: string) => api.post<{ description: string; timezone: string; next_runs: string[] }>('/schedules/preview', { cron, timezone }),
+};
+
 // ===== 后台任务 API =====
 export interface AgentTask {
   id: string;
@@ -296,6 +345,7 @@ export const chatApi = {
         resume: options?.resume,
         file_refs: options?.fileRefs?.length ? options.fileRefs : undefined,
         skills: options?.skills?.length ? options.skills : undefined,
+        timezone: browserTimezone(),
       }),
       signal,
     });

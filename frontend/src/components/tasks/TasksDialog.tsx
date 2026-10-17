@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Ban, CheckCircle2, Clock, ListChecks, Loader2, RotateCcw, X, XCircle, AlertTriangle, ClipboardList } from 'lucide-react'
 import { tasksApi, type AgentTask } from '@/api'
+import { SchedulesPanel } from './SchedulesPanel'
 
 interface TasksDialogProps {
   open: boolean
@@ -38,6 +39,7 @@ function when(iso: string) {
 export function TasksDialog({ open, onClose, onOpenSession, onToast }: TasksDialogProps) {
   const [tasks, setTasks] = useState<AgentTask[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [tab, setTab] = useState<'runs' | 'schedules'>('runs')
 
   const reload = () => tasksApi.list().then(({ data }) => setTasks(data.tasks)).catch(() => setTasks([]))
 
@@ -84,7 +86,31 @@ export function TasksDialog({ open, onClose, onOpenSession, onToast }: TasksDial
             <X className="h-4 w-4" />
           </button>
         </div>
+        <div role="tablist" className="flex gap-1 border-b border-surface-100 px-3 pt-2">
+          {([['runs', '运行记录'], ['schedules', '定时任务']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={tab === id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`-mb-px border-b-2 px-2.5 pb-1.5 text-xs font-medium ${tab === id ? 'border-surface-900 text-surface-900' : 'border-transparent text-surface-400 hover:text-surface-700'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          {tab === 'schedules' && (
+            <SchedulesPanel
+              onOpenSession={(id) => {
+                onClose()
+                onOpenSession(id)
+              }}
+              onToast={onToast}
+            />
+          )}
+          {tab === 'runs' && <>
           {tasks === null && (
             <div className="flex items-center gap-2 px-1 py-6 text-xs text-surface-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载…
@@ -139,6 +165,7 @@ export function TasksDialog({ open, onClose, onOpenSession, onToast }: TasksDial
               </div>
             )
           })}
+          </>}
         </div>
       </div>
     </div>

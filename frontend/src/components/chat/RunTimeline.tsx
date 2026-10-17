@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
+import { AlarmClock, AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
 import { workspaceApi } from '@/api'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
 
 export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> = {
+  schedule_create: { label: '创建定时任务', icon: AlarmClock },
+  schedule_list: { label: '查看定时任务', icon: AlarmClock },
   ppt_plan: { label: '规划 PPT 大纲', icon: LayoutDashboard },
   ppt_generate: { label: '生成 PPT', icon: LayoutDashboard },
   doc_generate: { label: '生成 Word 文档', icon: FileEdit },

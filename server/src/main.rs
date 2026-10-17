@@ -12,6 +12,7 @@ mod llm;
 mod models;
 mod render;
 mod routes;
+mod schedules;
 mod skills;
 mod state;
 mod tasks;
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
         Ok(n) => info!("⏹️ {n} 个未完成的后台任务已标记为中断"),
         Err(e) => tracing::warn!("标记中断任务失败: {e:?}"),
     }
+
+    // 定时任务调度循环
+    schedules::spawn_scheduler();
 
     // 注册 Agent 工具
     agent::tools::register_all_tools().await;

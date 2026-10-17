@@ -11,6 +11,7 @@ pub mod ppt_generate;
 pub mod ppt_plan;
 pub mod propose_plan;
 pub mod sheet_generate;
+pub mod schedule_tools;
 pub mod skill_tools;
 pub mod video_batch_generate;
 pub mod video_generate;
@@ -59,6 +60,8 @@ pub async fn register_all_tools() {
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceListTool)).await;
     REGISTRY.register(Arc::new(data_tools::DataProfileTool)).await;
     REGISTRY.register(Arc::new(skill_tools::UseSkillTool)).await;
+    REGISTRY.register(Arc::new(schedule_tools::ScheduleCreateTool)).await;
+    REGISTRY.register(Arc::new(schedule_tools::ScheduleListTool)).await;
     REGISTRY.register(Arc::new(skill_tools::ReadSkillFileTool)).await;
     REGISTRY.register(Arc::new(data_tools::DataQueryTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceSearchTool)).await;
