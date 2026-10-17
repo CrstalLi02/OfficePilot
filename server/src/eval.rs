@@ -64,6 +64,10 @@ struct CaseMessage {
 #[derive(Debug, Clone, Serialize)]
 struct Attempt {
     passed: bool,
+    /// 严格判定未通过，但第一轮只做了合理的准备步骤（加载技能、找 / 读文件、搜索、提交计划），
+    /// 且没有调用任何禁止的工具。报告里单独统计，不计入严格通过率
+    #[serde(default)]
+    prep: bool,
     tools: Vec<String>,
     tool_call_count: usize,
     latency_ms: u128,
@@ -202,6 +206,26 @@ fn effective_tools(tool_calls: &[crate::llm::types::ToolCall]) -> BTreeSet<Strin
     tools
 }
 
+/// 多步任务里合理的“第一步”：不产出最终结果，只是为后续步骤做准备
+const PREP_TOOLS: &[&str] = &[
+    "use_skill",
+    "read_skill_file",
+    "workspace_list",
+    "workspace_search",
+    "workspace_read",
+    "data_profile",
+    "web_search",
+    "propose_plan",
+];
+
+/// 严格未通过时，是否属于“只做了准备步骤”
+fn is_prep_step(case: &EvalCase, tools: &BTreeSet<String>) -> bool {
+    !case.expect_no_tool
+        && !tools.is_empty()
+        && tools.iter().all(|t| PREP_TOOLS.contains(&t.as_str()))
+        && !case.forbid.iter().any(|t| tools.contains(t))
+}
+
 fn judge(case: &EvalCase, tools: &BTreeSet<String>) -> (bool, String) {
     let mut problems = Vec::new();
     if case.expect_no_tool && !tools.is_empty() {
@@ -269,13 +293,21 @@ async fn run_attempt(
     let exposed: Vec<String> = function_defs.iter().map(|d| d.function.name.clone()).collect();
 
     let started = Instant::now();
-    let result = client
-        .chat_with_attachments(
+    // 网络错误不是路由结果：重试一次，避免把它记成失败
+    let call = || {
+        client.chat_with_attachments(
             &conversation,
             (!function_defs.is_empty()).then_some(function_defs.as_slice()),
             (!attachments.is_empty()).then_some(attachments.as_slice()),
         )
-        .await;
+    };
+    let result = match call().await {
+        Err(e) if e.to_string().contains("error sending request") => {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            call().await
+        }
+        other => other,
+    };
     let latency_ms = started.elapsed().as_millis();
 
     let attempt = match result {
@@ -287,8 +319,10 @@ async fn run_attempt(
                 .unwrap_or_default();
             let tools = effective_tools(&calls);
             let (passed, reason) = judge(case, &tools);
+            let prep = !passed && is_prep_step(case, &tools);
             Attempt {
                 passed,
+                prep,
                 tools: tools.into_iter().collect(),
                 tool_call_count: calls.len(),
                 latency_ms,
@@ -297,6 +331,7 @@ async fn run_attempt(
         }
         Err(e) => Attempt {
             passed: false,
+            prep: false,
             tools: vec![],
             tool_call_count: 0,
             latency_ms,
@@ -345,7 +380,14 @@ fn render_markdown(
         reports.len()
     ));
     out.push_str("| 指标 | 值 |\n|---|---|\n");
+    let prep = attempts.iter().filter(|a| a.prep).count() as f64;
     out.push_str(&format!("| 通过率 | **{:.1}%** ({}/{}) |\n", passed / total * 100.0, passed, attempts.len()));
+    out.push_str(&format!(
+        "| 含准备步骤的通过率 | {:.1}% ({}/{})：第一轮只做了加载技能、找 / 读文件、搜索、提交计划，且未调用禁止的工具 |\n",
+        (passed + prep) / total * 100.0,
+        passed + prep,
+        attempts.len()
+    ));
     out.push_str(&format!("| 调用失败 | {errors} |\n"));
     out.push_str(&format!("| 调用工具时平均 tool_call 数 | {avg_calls:.2} |\n"));
     out.push_str(&format!("| 单轮多工具比例 | {:.1}% |\n", multi_rate * 100.0));
@@ -378,7 +420,7 @@ fn render_markdown(
             .attempts
             .iter()
             .filter(|a| !a.passed)
-            .map(|a| a.reason.replace('|', "\\|"))
+            .map(|a| format!("{}{}", if a.prep { "（准备步骤）" } else { "" }, a.reason.replace('|', "\\|")))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>()
@@ -532,6 +574,18 @@ mod tests {
         let c = case(r#"{"id":"c","category":"x","message":"m","expect_no_tool":true}"#);
         assert!(judge(&c, &set(&[])).0);
         assert!(!judge(&c, &set(&["web_search"])).0);
+    }
+
+    #[test]
+    fn prep_steps_are_counted_separately() {
+        let c = case(r#"{"id":"a","category":"x","message":"m","expect_any":["data_query"],"forbid":["chart_generate"]}"#);
+        assert!(is_prep_step(&c, &set(&["workspace_search"])));
+        assert!(is_prep_step(&c, &set(&["use_skill", "data_profile"])));
+        assert!(!is_prep_step(&c, &set(&["workspace_search", "chart_generate"])), "调用了禁止的工具");
+        assert!(!is_prep_step(&c, &set(&["md_generate"])), "不是准备工具");
+        assert!(!is_prep_step(&c, &set(&[])));
+        let chat = case(r#"{"id":"b","category":"x","message":"m","expect_no_tool":true}"#);
+        assert!(!is_prep_step(&chat, &set(&["web_search"])), "应直接回复的用例不算");
     }
 
     #[test]
