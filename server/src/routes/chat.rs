@@ -413,6 +413,18 @@ pub async fn start_chat_task(
         [overview, refs].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
     };
 
+    // 当前时间（用户时区）：理解“明天”“下周五”、创建定时任务都需要
+    let now_note = {
+        let tz: chrono_tz::Tz = req
+            .timezone
+            .as_deref()
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::Asia::Shanghai);
+        let now = chrono::Utc::now().with_timezone(&tz);
+        let weekday = ["一", "二", "三", "四", "五", "六", "日"][now.format("%u").to_string().parse::<usize>().unwrap_or(1) - 1];
+        format!("## 当前时间\n{}（星期{weekday}，时区 {tz}）", now.format("%Y-%m-%d %H:%M"))
+    };
+
     // 技能：清单（名称 + 简介）+ 用户显式选择的技能正文；显式技能声明了本系统的工具时缩小工具范围
     let all_skills = crate::skills::load_all(&pool, &owner_id).await.unwrap_or_else(|e| {
         tracing::warn!("[Skills] 加载失败: {e:?}");
@@ -471,7 +483,7 @@ pub async fn start_chat_task(
             AgentConfig {
                 max_turns: 10,
                 // 附上会话产物清单，模型才能把"第三页""那份周报"对应到具体产物并局部修改
-                system_prompt: [system_prompt, skill_note, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
+                system_prompt: [system_prompt, now_note, skill_note, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
                     .into_iter()
                     .filter(|part| !part.is_empty())
                     .collect::<Vec<_>>()
@@ -495,7 +507,8 @@ pub async fn start_chat_task(
         emit,
     )
     .with_tool_config(req.tool_config.clone().unwrap_or(serde_json::json!({})))
-    .with_prior_artifacts(existing_artifacts.clone());
+    .with_prior_artifacts(existing_artifacts.clone())
+    .with_timezone(req.timezone.clone());
 
     let session_id_for_save = session_id.clone();
     let pool_for_save = pool.clone();

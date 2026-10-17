@@ -10,6 +10,7 @@ pub mod notification;
 pub mod project;
 pub mod session;
 pub mod workspace;
+pub mod schedules;
 pub mod settings;
 pub mod skills;
 pub mod tasks;
@@ -44,6 +45,7 @@ pub fn build_router() -> Router {
         .merge(workspace::router())
         .merge(skills::router())
         .merge(tasks::router())
+        .merge(schedules::router())
         .nest_service(
             "/outputs",
             ServeDir::new(crate::config::config().render_output_dir.clone()),

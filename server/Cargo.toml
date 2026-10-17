@@ -61,6 +61,9 @@ docx-rs = "0.4"
 # 54.x 的最低 Rust 版本是 1.88，与 Dockerfile 的构建镜像一致
 datafusion = { version = "54.1", default-features = false, features = ["sql", "math_expressions", "datetime_expressions", "string_expressions", "unicode_expressions", "regex_expressions", "nested_expressions", "recursive_protection"] }
 calamine = { version = "0.36", features = ["dates"] }
+# 定时任务：cron 表达式（5 段，支持 L / W / #）与时区
+croner = "4"
+chrono-tz = "0.10"
 # GBK 编码的 CSV（国内 Excel 导出常见）
 encoding_rs = "0.8"
 rust_xlsxwriter = "0.79"
