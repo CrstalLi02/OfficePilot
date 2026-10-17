@@ -1,6 +1,6 @@
 ---
 name: presentation-structure
-description: 设计汇报型 PPT 的叙事结构：结论先行（金字塔原理），一页一个观点，标题即结论，控制页数和信息密度。用户要做汇报 PPT、述职、方案汇报、项目复盘演示时使用，先用它规划结构再生成幻灯片。
+description: 设计汇报型 PPT 的叙事结构：结论先行（金字塔原理），一页一个观点，标题即结论。只用于需要说服听众或争取决策的场景——工作汇报、述职、方案评审、项目复盘、数据汇报；产品介绍、培训课件、科普讲解等普通 PPT 不需要它，直接调用 ppt_plan。
 metadata: {"walioffice": {"category": "演示", "icon": "presentation"}}
 ---
 
