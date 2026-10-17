@@ -165,6 +165,8 @@ export interface PersistedSession {
     created_at?: string;
   }>;
   artifacts?: Artifact[];
+  /** 会话里正在后台运行的任务（刷新后据此重新订阅） */
+  running_task_id?: string | null;
   /** 等待确认的计划（Plan 模式） */
   pending_plan?: { run_id: string; plan: AgentPlan } | null;
   project_id?: string;

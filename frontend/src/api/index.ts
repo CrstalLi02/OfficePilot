@@ -192,8 +192,75 @@ export const artifactApi = {
     api.put<{ artifact: Artifact; unchanged?: boolean }>(`/artifacts/${artifactId}`, { session_id: sessionId, ...payload }),
 };
 
+/** 逐行解析 SSE 响应，把每个事件交给 onEvent */
+async function readSse(response: Response, onEvent: (event: string, data: any) => void) {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = 'message';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          const dataStr = line.slice(5).trim();
+          if (dataStr) {
+            try {
+              onEvent(currentEvent, JSON.parse(dataStr));
+            } catch {
+              onEvent(currentEvent, dataStr);
+            }
+          }
+        } else if (line.trim() === '') {
+          currentEvent = 'message';
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// ===== 后台任务 API =====
+export interface AgentTask {
+  id: string;
+  session_id: string;
+  origin: 'chat' | 'schedule' | 'im' | string;
+  title: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'awaiting_approval' | 'interrupted' | string;
+  summary?: string | null;
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  /** 仍在运行，可订阅进度 */
+  live: boolean;
+}
+
+export const tasksApi = {
+  list: () => api.get<{ tasks: AgentTask[] }>('/tasks'),
+  cancel: (taskId: string) => api.post<{ cancelled: boolean }>(`/tasks/${taskId}/cancel`),
+  retry: (taskId: string) => api.post<{ task_id: string; session_id: string }>(`/tasks/${taskId}/retry`),
+};
+
 // ===== 对话 API (SSE) =====
 export const chatApi = {
+  /** 重新订阅后台任务的进度（after 为已收到的最后一个事件序号） */
+  attach: async (taskId: string, after: number, onEvent: (event: string, data: any) => void, token: string, signal?: AbortSignal) => {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/stream?after=${after}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await readSse(response, onEvent);
+  },
   /** 停止某个会话正在运行的 Agent（后端会中断 LLM 与工具，并保存已生成的产物） */
   cancel: (sessionId: string) => api.post('/chat/cancel', { session_id: sessionId }),
   stream: async (
@@ -251,42 +318,6 @@ export const chatApi = {
       throw new Error(detail);
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-
-    if (!reader) return;
-
-    let buffer = '';
-    let currentEvent = 'message';
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event:')) {
-            currentEvent = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const dataStr = line.slice(5).trim();
-            if (dataStr) {
-              try {
-                const data = JSON.parse(dataStr);
-                onEvent(currentEvent, data);
-              } catch {
-                onEvent(currentEvent, dataStr);
-              }
-            }
-          } else if (line.trim() === '') {
-            currentEvent = 'message';
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
+    await readSse(response, onEvent);
   },
 };

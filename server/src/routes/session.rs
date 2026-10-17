@@ -70,7 +70,10 @@ async fn get_session(
     if session.owner_id != user.0.id {
         return Err(AppError::Forbidden);
     }
-    Ok(Json(json!(session)))
+    // 会话里正在后台运行的任务：前端据此重新订阅进度（刷新、换设备后接着看）
+    let mut value = json!(session);
+    value["running_task_id"] = json!(crate::tasks::running_for_session(&session_id, &user.0.id));
+    Ok(Json(value))
 }
 
 async fn get_messages(

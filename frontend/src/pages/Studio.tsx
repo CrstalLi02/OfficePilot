@@ -3,15 +3,16 @@ import type React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePPTStore } from '@/stores/ppt-store'
-import { artifactApi, chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi } from '@/api'
+import { artifactApi, tasksApi, chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi } from '@/api'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ConversationTabs } from '@/components/chat/ConversationTabs'
 import { SlidePreview } from '@/components/preview/SlidePreview'
 import { ConversationSidebar } from '@/components/history/ConversationSidebar'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SkillsDialog } from '@/components/skills/SkillsDialog'
+import { TasksDialog } from '@/components/tasks/TasksDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
-import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu, ListChecks } from 'lucide-react'
 import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
 import { applyRunEvent, EMPTY_RUN, type AgentRunState } from '@/lib/agent-run'
@@ -215,6 +216,9 @@ export default function Studio() {
   /** 本轮选择的技能（发送后清空） */
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const [showSkills, setShowSkills] = useState(false)
+  const [showTasks, setShowTasks] = useState(false)
+  /** 正在后台运行的任务数（顶栏角标） */
+  const [runningTasks, setRunningTasks] = useState(0)
   /** 正在执行的已确认计划，用于把 plan_progress 标到对应卡片上 */
   const activePlanRunRef = useRef<string | null>(null)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
@@ -693,13 +697,14 @@ export default function Studio() {
   }
 
   const handleSelectConversation = async (id: string) => {
-    // 如果正在 streaming，先中止当前请求再切换
+    // 正在接收进度时先断开（只断开订阅，任务在后台继续运行，切回来会重新接上）
     if (isStreaming) {
       abortRef.current?.abort()
+      abortRef.current = null
       setStreaming(false)
       setStreamPhase('idle')
-      setStreamStatus('已停止生成')
-      if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'idle', streamStatus: '已停止生成' })
+      setStreamStatus('任务在后台继续运行')
+      if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'idle', streamStatus: '任务在后台继续运行' })
     }
     setActiveView('chat')
     try {
@@ -756,6 +761,8 @@ export default function Studio() {
           streamStatus: '已恢复历史会话',
         })
       }
+      // 会话里有任务还在后台运行：接上它的进度
+      if (session.running_task_id) attachToTask(session.running_task_id)
     } catch (err) {
       console.error('Select conversation error:', err)
       const errMsg = err instanceof Error ? err.message : '未知错误'
@@ -1254,6 +1261,306 @@ export default function Studio() {
     return activeTool
   }
 
+  // 顶栏角标：定时刷新正在后台运行的任务数（包括其他标签页、定时任务、IM 发起的）
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () =>
+      tasksApi
+        .list()
+        .then(({ data }) => !cancelled && setRunningTasks(data.tasks.filter((t) => t.live).length))
+        .catch(() => {})
+    refresh()
+    const timer = window.setInterval(refresh, isStreaming ? 5000 : 20000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isStreaming])
+
+  /** SSE 事件处理（发送消息和重新订阅后台任务共用）。assistantText 累积本轮回复 */
+  const makeStreamHandler = (opts: { inferredTool: ToolKind; message: string }) => {
+    const { inferredTool, message } = opts
+    let assistantText = ''
+    return (event: string, data: any) => {
+      setRunState((state) => applyRunEvent(state, event, data))
+      switch (event) {
+        case 'run_start':
+          if (data.session_id) runSessionRef.current = data.session_id
+          break
+
+        case 'plan_proposed':
+          if (data.session_id) setSessionId(data.session_id)
+          patchMessages((msgs) => {
+            msgs[msgs.length - 1] = {
+              ...msgs[msgs.length - 1],
+              plan: { runId: data.run_id, plan: data.plan, status: 'pending' },
+            }
+            return msgs
+          })
+          break
+
+        case 'plan_progress':
+          if (activePlanRunRef.current) {
+            patchPlan(activePlanRunRef.current, (plan) => ({
+              ...plan,
+              stepStatus: { ...plan.stepStatus, [data.step_id]: data.success ? 'done' : 'error' },
+            }))
+          }
+          break
+
+        case 'tool_start':
+          setStreamPhase('generating')
+          setStreamStatus(`正在准备工具：${data.tool}`)
+          break
+
+        case 'tool_call':
+          setStreamPhase('generating')
+          setStreamStatus(`正在执行：${data.tool}`)
+          setProcessLogs((logs) => [...logs.slice(-8), `调用工具：${data.tool}`])
+          break
+
+        case 'message':
+          setStreamPhase(data.start ? 'thinking' : 'finishing')
+          setStreamStatus(data.start ? '正在连接模型...' : '正在整理回复...')
+          if (data.text) {
+            assistantText += data.text
+            usePPTStore.setState((state) => {
+              const msgs = [...state.messages]
+              msgs[msgs.length - 1] = {
+                ...msgs[msgs.length - 1],
+                content: assistantText,
+              }
+              // 同时更新当前 tab 的 messages，防止 done 事件中 syncFromTab 用旧 tab 数据覆盖全局
+              const tabId = state.activeTabId
+              if (tabId && state.tabs[tabId]) {
+                return {
+                  messages: msgs,
+                  tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } },
+                }
+              }
+              return { messages: msgs }
+            })
+          }
+          if (data.session_id) {
+            const prevSessionId = sessionId
+            setSessionId(data.session_id)
+            // 更新 tab 标题
+            if (activeTabId && !prevSessionId) {
+              const userMsg = message.slice(0, 24)
+              updateTab(activeTabId, { tabTitle: userMsg, sessionId: data.session_id })
+              // 首次获得 session_id 时立即刷新列表，让当前对话出现在侧边栏
+              refreshConversations()
+              refreshProjects()
+            }
+          }
+          if (data.project_id && !project) {
+            pptApi.getProject(data.project_id).then(({ data: proj }) => {
+              setProject(proj)
+              setSlides(proj.slides || [])
+            })
+          }
+          break
+
+        case 'project_update':
+          setActiveTool('ppt')
+          setShowArtifactPanel(true)
+          setStreamPhase('generating')
+          setStreamStatus(
+            typeof data.total_slides === 'number'
+              ? `已创建项目，准备生成 1 / ${data.total_slides} 页...`
+              : '已创建项目，正在生成大纲...'
+          )
+          applyRealtimePptState(data)
+          if (data.theme) setSelectedTheme(data.theme)
+          break
+
+        case 'slide_update':
+          setActiveTool('ppt')
+          setShowArtifactPanel(true)
+          setStreamPhase('generating')
+          setStreamStatus(
+            typeof data.slide_count === 'number' && typeof data.total_slides === 'number'
+              ? `正在生成第 ${data.slide_count} / ${data.total_slides} 页...`
+              : `正在更新幻灯片${data.slide_count ? `（${data.slide_count} 页）` : ''}...`
+          )
+          if (data.slides) {
+            applyRealtimePptState(data)
+          }
+          break
+
+        case 'artifact_update':
+          if (data.artifact) {
+            upsertArtifact(data.artifact)
+            setActiveTool(inferredTool === 'general' ? 'general' : (data.artifact.tool_kind || inferredTool))
+            setShowArtifactPanel(true)
+            setStreamPhase(data.artifact.status === 'ready' ? 'finishing' : 'generating')
+            setStreamStatus(`已更新产物：${data.artifact.title || '未命名产物'}`)
+            if (data.artifact.kind === 'ppt') {
+              applyPptArtifact(data.artifact)
+              if (typeof data.artifact.content?.total_slides === 'number') {
+                setPptProgress({
+                  current: data.artifact.content?.slide_count || data.artifact.content?.slides?.length || 0,
+                  total: data.artifact.content.total_slides,
+                })
+              }
+            }
+            if (
+              data.artifact.kind === 'sheet' &&
+              data.artifact.content?.export_requested &&
+              !autoExportedArtifactIdsRef.current.has(data.artifact.id)
+            ) {
+              autoExportedArtifactIdsRef.current.add(data.artifact.id)
+              setProcessLogs((logs) => [...logs.slice(-8), 'Excel：正在自动导出 XLSX'])
+              handleExportExcel(data.artifact).catch((err) => {
+                console.error('Auto Excel export error:', err)
+                setProcessLogs((logs) => [...logs.slice(-8), 'Excel：自动导出失败，请点击右侧按钮重试'])
+              })
+            }
+            if (
+              data.artifact.kind === 'document' &&
+              data.artifact.content?.export_requested &&
+              !autoExportedArtifactIdsRef.current.has(data.artifact.id)
+            ) {
+              autoExportedArtifactIdsRef.current.add(data.artifact.id)
+              setProcessLogs((logs) => [...logs.slice(-8), 'Word：正在自动导出 DOCX'])
+              handleExportDocx(data.artifact).catch((err) => {
+                console.error('Auto DOCX export error:', err)
+                setProcessLogs((logs) => [...logs.slice(-8), 'Word：自动导出失败，请点击右侧按钮重试'])
+              })
+            }
+            if (
+              data.artifact.kind === 'markdown' &&
+              data.artifact.content?.export_requested &&
+              !autoExportedArtifactIdsRef.current.has(data.artifact.id)
+            ) {
+              autoExportedArtifactIdsRef.current.add(data.artifact.id)
+              setProcessLogs((logs) => [...logs.slice(-8), 'Markdown：正在自动下载 MD'])
+              Promise.resolve(handleExportMarkdown(data.artifact)).catch((err) => {
+                console.error('Auto Markdown export error:', err)
+                setProcessLogs((logs) => [...logs.slice(-8), 'Markdown：自动下载失败，请点击右侧按钮重试'])
+              })
+            }
+          }
+          break
+
+        case 'state_update':
+          setStreamPhase(data.phase === 'done' ? 'done' : 'generating')
+          setStreamStatus(data.detail || data.step || '正在处理...')
+          if (activeTabId) updateTab(activeTabId, { streamPhase: data.phase === 'done' ? ('done' as const) : ('generating' as const), streamStatus: data.detail || data.step || '正在处理...' })
+          setProcessLogs((logs) => [...logs.slice(-8), `${data.step || '进度'}：${data.detail || ''}`])
+          break
+
+        case 'tool_result': {
+          const toolName = data.tool || 'unknown'
+          const detail = data.error || data.result?.error || data.result?.observation || ''
+          if (data.success) {
+            setProcessLogs((logs) => [...logs.slice(-8), `工具 ${toolName} ✓ 完成`])
+          } else {
+            const message = detail ? String(detail).slice(0, 300) : '未返回具体错误'
+            setStreamStatus(`工具 ${toolName} 失败：${message}`)
+            setProcessLogs((logs) => [...logs.slice(-8), `工具 ${toolName} ✗ 失败：${message}`])
+          }
+          break
+        }
+
+        case 'done': {
+          const doneArtifacts = Array.isArray(data.new_artifacts) ? data.new_artifacts : []
+          const doneStatus = data.cancelled ? '已停止生成' : data.awaiting_approval ? '等待确认计划' : doneArtifacts.length > 0 ? '生成完成' : '回复完成'
+          if (data.cancelled) {
+            if (!assistantText.trim()) {
+              assistantText = '已停止本次生成。'
+              usePPTStore.setState((state) => {
+                const msgs = [...state.messages]
+                msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: assistantText }
+                const tabId = state.activeTabId
+                if (tabId && state.tabs[tabId]) {
+                  return { messages: msgs, tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } } }
+                }
+                return { messages: msgs }
+              })
+            }
+          } else {
+            playConversationDoneSound()
+          }
+          setStreamPhase('done')
+          setStreamStatus(doneStatus)
+          if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'done', streamStatus: doneStatus })
+          if (data.session_id) setSessionId(data.session_id)
+          // 确保对话结束后立即刷新列表，让当前对话出现在侧边栏
+          refreshConversations()
+          refreshProjects()
+          if (Array.isArray(data.artifacts)) {
+            data.artifacts.forEach((artifact: Artifact) => upsertArtifact(artifact))
+            if (data.artifacts.length > 0) {
+              setShowArtifactPanel(true)
+            }
+          }
+          const pptArtifact = doneArtifacts.find((item: Artifact) => item.kind === 'ppt')
+          if (pptArtifact) {
+            applyPptArtifact(pptArtifact)
+            const total = pptArtifact.content?.total_slides || pptArtifact.content?.slide_count || pptArtifact.content?.slides?.length || 0
+            if (total > 0) {
+              setPptProgress({ current: total, total })
+            }
+          } else if (data.project_id && !project) {
+            pptApi.getProject(data.project_id).then(({ data: proj }) => {
+              setProject(proj)
+              setSlides(proj.slides || [])
+            })
+          }
+          break
+        }
+
+        case 'error':
+          console.error('SSE error:', data)
+          setStreamPhase('error')
+          setStreamStatus(data.message || data.detail || '生成失败')
+          setPptProgress(null)
+          if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'error', streamStatus: data.message || data.detail || '生成失败' })
+          usePPTStore.setState((state) => {
+            const msgs = [...state.messages]
+            msgs[msgs.length - 1] = {
+              ...msgs[msgs.length - 1],
+              content: `抱歉，生成失败：${data.message || data.detail || '请稍后重试'}`,
+            }
+            const tabId = state.activeTabId
+            if (tabId && state.tabs[tabId]) {
+              return {
+                messages: msgs,
+                tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } },
+              }
+            }
+            return { messages: msgs }
+          })
+          break
+      }
+    }
+  }
+
+  /** 重新订阅后台任务的进度：刷新页面、切换回会话时，从头回放事件并接上实时进度 */
+  const attachToTask = async (taskId: string) => {
+    const token = useAuthStore.getState().token
+    if (!token || abortRef.current) return
+    const abortController = new AbortController()
+    abortRef.current = abortController
+    setStreaming(true)
+    setStreamPhase('generating')
+    setStreamStatus('正在接收后台任务的进度…')
+    setRunState(EMPTY_RUN)
+    if (activeTabId) updateTab(activeTabId, { isStreaming: true, streamPhase: 'generating', streamStatus: '正在接收后台任务的进度…' })
+    addMessage({ role: 'assistant', content: '', timestamp: new Date().toISOString() })
+    try {
+      await chatApi.attach(taskId, 0, makeStreamHandler({ inferredTool: activeTool, message: '' }), token, abortController.signal)
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) console.error('Attach task error:', err)
+    } finally {
+      setStreaming(false)
+      abortRef.current = null
+      refreshConversations()
+      if (activeTabId) updateTab(activeTabId, { isStreaming: false })
+    }
+  }
+
   /** override 用于提交计划决定：显示一条用户消息并带上 resume 恢复那次运行 */
   const handleSend = async (override?: { displayMessage: string; resume: PlanDecisionPayload }) => {
     if (override) {
@@ -1338,7 +1645,6 @@ export default function Studio() {
       return
     }
 
-    let assistantText = ''
     addMessage({
       role: 'assistant',
       content: '',
@@ -1354,260 +1660,7 @@ export default function Studio() {
         pickedToolRef.current,
         selectedModel,
         pendingAttachments,
-        (event, data) => {
-          setRunState((state) => applyRunEvent(state, event, data))
-          switch (event) {
-            case 'run_start':
-              if (data.session_id) runSessionRef.current = data.session_id
-              break
-
-            case 'plan_proposed':
-              if (data.session_id) setSessionId(data.session_id)
-              patchMessages((msgs) => {
-                msgs[msgs.length - 1] = {
-                  ...msgs[msgs.length - 1],
-                  plan: { runId: data.run_id, plan: data.plan, status: 'pending' },
-                }
-                return msgs
-              })
-              break
-
-            case 'plan_progress':
-              if (activePlanRunRef.current) {
-                patchPlan(activePlanRunRef.current, (plan) => ({
-                  ...plan,
-                  stepStatus: { ...plan.stepStatus, [data.step_id]: data.success ? 'done' : 'error' },
-                }))
-              }
-              break
-
-            case 'tool_start':
-              setStreamPhase('generating')
-              setStreamStatus(`正在准备工具：${data.tool}`)
-              break
-
-            case 'tool_call':
-              setStreamPhase('generating')
-              setStreamStatus(`正在执行：${data.tool}`)
-              setProcessLogs((logs) => [...logs.slice(-8), `调用工具：${data.tool}`])
-              break
-
-            case 'message':
-              setStreamPhase(data.start ? 'thinking' : 'finishing')
-              setStreamStatus(data.start ? '正在连接模型...' : '正在整理回复...')
-              if (data.text) {
-                assistantText += data.text
-                usePPTStore.setState((state) => {
-                  const msgs = [...state.messages]
-                  msgs[msgs.length - 1] = {
-                    ...msgs[msgs.length - 1],
-                    content: assistantText,
-                  }
-                  // 同时更新当前 tab 的 messages，防止 done 事件中 syncFromTab 用旧 tab 数据覆盖全局
-                  const tabId = state.activeTabId
-                  if (tabId && state.tabs[tabId]) {
-                    return {
-                      messages: msgs,
-                      tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } },
-                    }
-                  }
-                  return { messages: msgs }
-                })
-              }
-              if (data.session_id) {
-                const prevSessionId = sessionId
-                setSessionId(data.session_id)
-                // 更新 tab 标题
-                if (activeTabId && !prevSessionId) {
-                  const userMsg = message.slice(0, 24)
-                  updateTab(activeTabId, { tabTitle: userMsg, sessionId: data.session_id })
-                  // 首次获得 session_id 时立即刷新列表，让当前对话出现在侧边栏
-                  refreshConversations()
-                  refreshProjects()
-                }
-              }
-              if (data.project_id && !project) {
-                pptApi.getProject(data.project_id).then(({ data: proj }) => {
-                  setProject(proj)
-                  setSlides(proj.slides || [])
-                })
-              }
-              break
-
-            case 'project_update':
-              setActiveTool('ppt')
-              setShowArtifactPanel(true)
-              setStreamPhase('generating')
-              setStreamStatus(
-                typeof data.total_slides === 'number'
-                  ? `已创建项目，准备生成 1 / ${data.total_slides} 页...`
-                  : '已创建项目，正在生成大纲...'
-              )
-              applyRealtimePptState(data)
-              if (data.theme) setSelectedTheme(data.theme)
-              break
-
-            case 'slide_update':
-              setActiveTool('ppt')
-              setShowArtifactPanel(true)
-              setStreamPhase('generating')
-              setStreamStatus(
-                typeof data.slide_count === 'number' && typeof data.total_slides === 'number'
-                  ? `正在生成第 ${data.slide_count} / ${data.total_slides} 页...`
-                  : `正在更新幻灯片${data.slide_count ? `（${data.slide_count} 页）` : ''}...`
-              )
-              if (data.slides) {
-                applyRealtimePptState(data)
-              }
-              break
-
-            case 'artifact_update':
-              if (data.artifact) {
-                upsertArtifact(data.artifact)
-                setActiveTool(inferredTool === 'general' ? 'general' : (data.artifact.tool_kind || inferredTool))
-                setShowArtifactPanel(true)
-                setStreamPhase(data.artifact.status === 'ready' ? 'finishing' : 'generating')
-                setStreamStatus(`已更新产物：${data.artifact.title || '未命名产物'}`)
-                if (data.artifact.kind === 'ppt') {
-                  applyPptArtifact(data.artifact)
-                  if (typeof data.artifact.content?.total_slides === 'number') {
-                    setPptProgress({
-                      current: data.artifact.content?.slide_count || data.artifact.content?.slides?.length || 0,
-                      total: data.artifact.content.total_slides,
-                    })
-                  }
-                }
-                if (
-                  data.artifact.kind === 'sheet' &&
-                  data.artifact.content?.export_requested &&
-                  !autoExportedArtifactIdsRef.current.has(data.artifact.id)
-                ) {
-                  autoExportedArtifactIdsRef.current.add(data.artifact.id)
-                  setProcessLogs((logs) => [...logs.slice(-8), 'Excel：正在自动导出 XLSX'])
-                  handleExportExcel(data.artifact).catch((err) => {
-                    console.error('Auto Excel export error:', err)
-                    setProcessLogs((logs) => [...logs.slice(-8), 'Excel：自动导出失败，请点击右侧按钮重试'])
-                  })
-                }
-                if (
-                  data.artifact.kind === 'document' &&
-                  data.artifact.content?.export_requested &&
-                  !autoExportedArtifactIdsRef.current.has(data.artifact.id)
-                ) {
-                  autoExportedArtifactIdsRef.current.add(data.artifact.id)
-                  setProcessLogs((logs) => [...logs.slice(-8), 'Word：正在自动导出 DOCX'])
-                  handleExportDocx(data.artifact).catch((err) => {
-                    console.error('Auto DOCX export error:', err)
-                    setProcessLogs((logs) => [...logs.slice(-8), 'Word：自动导出失败，请点击右侧按钮重试'])
-                  })
-                }
-                if (
-                  data.artifact.kind === 'markdown' &&
-                  data.artifact.content?.export_requested &&
-                  !autoExportedArtifactIdsRef.current.has(data.artifact.id)
-                ) {
-                  autoExportedArtifactIdsRef.current.add(data.artifact.id)
-                  setProcessLogs((logs) => [...logs.slice(-8), 'Markdown：正在自动下载 MD'])
-                  Promise.resolve(handleExportMarkdown(data.artifact)).catch((err) => {
-                    console.error('Auto Markdown export error:', err)
-                    setProcessLogs((logs) => [...logs.slice(-8), 'Markdown：自动下载失败，请点击右侧按钮重试'])
-                  })
-                }
-              }
-              break
-
-            case 'state_update':
-              setStreamPhase(data.phase === 'done' ? 'done' : 'generating')
-              setStreamStatus(data.detail || data.step || '正在处理...')
-              if (activeTabId) updateTab(activeTabId, { streamPhase: data.phase === 'done' ? ('done' as const) : ('generating' as const), streamStatus: data.detail || data.step || '正在处理...' })
-              setProcessLogs((logs) => [...logs.slice(-8), `${data.step || '进度'}：${data.detail || ''}`])
-              break
-
-            case 'tool_result': {
-              const toolName = data.tool || 'unknown'
-              const detail = data.error || data.result?.error || data.result?.observation || ''
-              if (data.success) {
-                setProcessLogs((logs) => [...logs.slice(-8), `工具 ${toolName} ✓ 完成`])
-              } else {
-                const message = detail ? String(detail).slice(0, 300) : '未返回具体错误'
-                setStreamStatus(`工具 ${toolName} 失败：${message}`)
-                setProcessLogs((logs) => [...logs.slice(-8), `工具 ${toolName} ✗ 失败：${message}`])
-              }
-              break
-            }
-
-            case 'done': {
-              const doneArtifacts = Array.isArray(data.new_artifacts) ? data.new_artifacts : []
-              const doneStatus = data.cancelled ? '已停止生成' : data.awaiting_approval ? '等待确认计划' : doneArtifacts.length > 0 ? '生成完成' : '回复完成'
-              if (data.cancelled) {
-                if (!assistantText.trim()) {
-                  assistantText = '已停止本次生成。'
-                  usePPTStore.setState((state) => {
-                    const msgs = [...state.messages]
-                    msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: assistantText }
-                    const tabId = state.activeTabId
-                    if (tabId && state.tabs[tabId]) {
-                      return { messages: msgs, tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } } }
-                    }
-                    return { messages: msgs }
-                  })
-                }
-              } else {
-                playConversationDoneSound()
-              }
-              setStreamPhase('done')
-              setStreamStatus(doneStatus)
-              if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'done', streamStatus: doneStatus })
-              if (data.session_id) setSessionId(data.session_id)
-              // 确保对话结束后立即刷新列表，让当前对话出现在侧边栏
-              refreshConversations()
-              refreshProjects()
-              if (Array.isArray(data.artifacts)) {
-                data.artifacts.forEach((artifact: Artifact) => upsertArtifact(artifact))
-                if (data.artifacts.length > 0) {
-                  setShowArtifactPanel(true)
-                }
-              }
-              const pptArtifact = doneArtifacts.find((item: Artifact) => item.kind === 'ppt')
-              if (pptArtifact) {
-                applyPptArtifact(pptArtifact)
-                const total = pptArtifact.content?.total_slides || pptArtifact.content?.slide_count || pptArtifact.content?.slides?.length || 0
-                if (total > 0) {
-                  setPptProgress({ current: total, total })
-                }
-              } else if (data.project_id && !project) {
-                pptApi.getProject(data.project_id).then(({ data: proj }) => {
-                  setProject(proj)
-                  setSlides(proj.slides || [])
-                })
-              }
-              break
-            }
-
-            case 'error':
-              console.error('SSE error:', data)
-              setStreamPhase('error')
-              setStreamStatus(data.message || data.detail || '生成失败')
-              setPptProgress(null)
-              if (activeTabId) updateTab(activeTabId, { isStreaming: false, streamPhase: 'error', streamStatus: data.message || data.detail || '生成失败' })
-              usePPTStore.setState((state) => {
-                const msgs = [...state.messages]
-                msgs[msgs.length - 1] = {
-                  ...msgs[msgs.length - 1],
-                  content: `抱歉，生成失败：${data.message || data.detail || '请稍后重试'}`,
-                }
-                const tabId = state.activeTabId
-                if (tabId && state.tabs[tabId]) {
-                  return {
-                    messages: msgs,
-                    tabs: { ...state.tabs, [tabId]: { ...state.tabs[tabId], messages: msgs } },
-                  }
-                }
-                return { messages: msgs }
-              })
-              break
-          }
-        },
+        makeStreamHandler({ inferredTool, message }),
         token,
         abortController.signal,
         toolConfig,
@@ -2068,6 +2121,18 @@ export default function Studio() {
 
             <div className="flex items-center gap-1.5 md:gap-2">
               <button
+                onClick={() => setShowTasks(true)}
+                className="btn-ghost relative shrink-0 rounded-full bg-white/45 hover:bg-white/75"
+                title="后台任务"
+              >
+                <ListChecks className="w-4 h-4" />
+                {runningTasks > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                    {runningTasks}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => navigate('/files')}
                 className="btn-ghost shrink-0 rounded-full bg-white/45 hover:bg-white/75"
                 title="我的文件"
@@ -2238,6 +2303,7 @@ export default function Studio() {
           onClose={() => setShowPresent(false)}
         />
       )}
+      <TasksDialog open={showTasks} onClose={() => setShowTasks(false)} onOpenSession={(id) => handleSelectConversation(id)} onToast={showToast} />
       <SkillsDialog open={showSkills} onClose={() => setShowSkills(false)} sessionId={sessionId} onToast={showToast} />
       {toast && (
         <div className="pointer-events-none fixed right-5 top-5 z-[70] flex justify-end" aria-live="polite">

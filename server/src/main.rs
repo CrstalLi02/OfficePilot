@@ -14,6 +14,7 @@ mod render;
 mod routes;
 mod skills;
 mod state;
+mod tasks;
 mod workspace;
 
 use std::net::SocketAddr;
@@ -42,6 +43,13 @@ async fn main() -> anyhow::Result<()> {
     // 初始化数据库（异步）
     let pool = state::init_db_pool().await;
     state::set_db_pool(pool);
+
+    // 上次未完成的后台任务无法从中途恢复，标记为已中断（可重试）
+    match tasks::mark_interrupted(&state::db_pool()).await {
+        Ok(0) => {}
+        Ok(n) => info!("⏹️ {n} 个未完成的后台任务已标记为中断"),
+        Err(e) => tracing::warn!("标记中断任务失败: {e:?}"),
+    }
 
     // 注册 Agent 工具
     agent::tools::register_all_tools().await;
