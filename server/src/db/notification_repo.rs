@@ -50,6 +50,21 @@ pub async fn list(
     Ok(result)
 }
 
+/// 新建一条通知（例如后台任务完成）
+pub async fn create(pool: &DbPool, user_id: &str, kind: &str, title: &str, content: &str, link: Option<&str>) -> AppResult<()> {
+    sqlx::query("INSERT INTO notifications (id, user_id, type, title, content, is_read, link, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)")
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(user_id)
+        .bind(kind)
+        .bind(title)
+        .bind(content)
+        .bind(link)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn unread_count(pool: &DbPool, user_id: &str) -> AppResult<i64> {
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0"

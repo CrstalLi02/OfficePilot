@@ -5,8 +5,6 @@ use futures::stream::Stream;
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::time::Duration;
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_util::sync::CancellationToken;
 
 use crate::agent::agent_loop::AgentStart;
 use crate::agent::plan::{AgentMode, Decision};
@@ -23,44 +21,6 @@ pub fn router() -> Router {
         .route("/api/chat/cancel", post(chat_cancel))
 }
 
-/// 正在运行的 Agent 任务
-struct ActiveRun {
-    run_id: String,
-    owner_id: String,
-    cancel: CancellationToken,
-}
-
-/// session_id → 当前运行
-static ACTIVE_RUNS: once_cell::sync::Lazy<
-    std::sync::Mutex<std::collections::HashMap<String, ActiveRun>>,
-> = once_cell::sync::Lazy::new(Default::default);
-
-/// 登记一次运行，返回 (run_id, 取消令牌)；同一会话已有运行时先取消旧的
-fn register_run(session_id: &str, owner_id: &str) -> (String, CancellationToken) {
-    let run = ActiveRun {
-        run_id: uuid::Uuid::new_v4().to_string(),
-        owner_id: owner_id.to_string(),
-        cancel: CancellationToken::new(),
-    };
-    let handle = (run.run_id.clone(), run.cancel.clone());
-    if let Some(previous) = ACTIVE_RUNS
-        .lock()
-        .unwrap()
-        .insert(session_id.to_string(), run)
-    {
-        previous.cancel.cancel();
-    }
-    handle
-}
-
-/// 运行结束时注销（只移除自己登记的那一次，避免误删同会话新一轮的登记）
-fn unregister_run(session_id: &str, run_id: &str) {
-    let mut runs = ACTIVE_RUNS.lock().unwrap();
-    if runs.get(session_id).is_some_and(|run| run.run_id == run_id) {
-        runs.remove(session_id);
-    }
-}
-
 #[derive(serde::Deserialize)]
 struct CancelRequest {
     session_id: String,
@@ -71,19 +31,8 @@ async fn chat_cancel(
     user: AuthUser,
     Json(req): Json<CancelRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let token = {
-        let runs = ACTIVE_RUNS.lock().unwrap();
-        runs.get(&req.session_id)
-            .filter(|run| run.owner_id == user.0.id)
-            .map(|run| run.cancel.clone())
-    };
-    let cancelled = match token {
-        Some(token) => {
-            token.cancel();
-            true
-        }
-        None => false,
-    };
+    let cancelled = crate::tasks::running_for_session(&req.session_id, &user.0.id)
+        .is_some_and(|task_id| crate::tasks::cancel(&task_id, &user.0.id));
     Ok(Json(serde_json::json!({ "cancelled": cancelled })))
 }
 
@@ -291,6 +240,68 @@ async fn chat_stream(
     user: AuthUser,
     Json(req): Json<ChatRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
+    let started = start_chat_task(&user.0.id, req, crate::tasks::Origin::Chat).await?;
+    task_sse(&started.task_id, &user.0.id, 0)
+}
+
+/// 订阅任务事件的 SSE：先回放 after 之后的历史事件，再推送实时事件，直到 done / error
+pub fn task_sse(
+    task_id: &str,
+    owner_id: &str,
+    after: u64,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
+    let (backlog, mut rx, finished) = crate::tasks::subscribe(task_id, owner_id, after)
+        .ok_or_else(|| AppError::NotFound("任务不存在或已结束".into()))?;
+    let task_id = task_id.to_string();
+    let to_sse = |e: &crate::tasks::TaskEvent| {
+        Ok::<_, Infallible>(Event::default().id(e.seq.to_string()).event(&e.event).data(e.data.to_string()))
+    };
+    let stream = async_stream::stream! {
+        let mut last = after;
+        let mut ended = finished;
+        for e in &backlog {
+            last = e.seq;
+            ended |= e.is_terminal();
+            yield to_sse(e);
+        }
+        while !ended {
+            match rx.recv().await {
+                Ok(e) => {
+                    if e.seq <= last {
+                        continue;
+                    }
+                    last = e.seq;
+                    ended = e.is_terminal();
+                    yield to_sse(&e);
+                }
+                // 消费太慢被广播丢弃：从回放缓冲补齐
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    for e in crate::tasks::events_after(&task_id, last) {
+                        last = e.seq;
+                        ended |= e.is_terminal();
+                        yield to_sse(&e);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+}
+
+/// 发起的任务
+pub struct StartedTask {
+    pub task_id: String,
+    pub session_id: String,
+}
+
+/// 发起一次 Agent 运行（对话、定时任务、IM 共用）：准备好上下文后在后台执行，立即返回任务 id。
+/// 运行与 HTTP 连接无关，进度通过 tasks 模块订阅。
+pub async fn start_chat_task(
+    owner_id: &str,
+    req: ChatRequest,
+    origin: crate::tasks::Origin,
+) -> Result<StartedTask, AppError> {
     let pool = state::db_pool();
 
     let Routing {
@@ -304,7 +315,7 @@ async fn chat_stream(
     }
 
     let client = std::sync::Arc::new(crate::llm::LlmClient::for_user(
-        &user.0.id,
+        &owner_id,
         req.model.as_deref(),
     ).await);
 
@@ -324,7 +335,7 @@ async fn chat_stream(
         let title: String = title_source.chars().take(30).collect();
         session_repo::create(
             &pool,
-            &user.0.id,
+            &owner_id,
             req.project_id.as_deref(),
             resolved_tool_kind.as_deref(),
             &title,
@@ -339,7 +350,7 @@ async fn chat_stream(
     let existing_artifacts = session_repo::get_artifacts(&pool, &session_id).await?;
 
     if let Some(attachments) = req.attachments.as_deref() {
-        crate::file_store::save_chat_attachments_to_files(&pool, &user.0.id, attachments).await;
+        crate::file_store::save_chat_attachments_to_files(&pool, &owner_id, attachments).await;
     }
 
     // 计划确认：校验并锁定那次等待中的运行（重复提交会被拒绝）
@@ -348,7 +359,7 @@ async fn chat_stream(
             let run = agent_run_repo::find(&pool, &decision.run_id)
                 .await?
                 .ok_or(AppError::NotFound("计划不存在或已过期".into()))?;
-            if run.owner_id != user.0.id || run.session_id != session_id {
+            if run.owner_id != owner_id || run.session_id != session_id {
                 return Err(AppError::Forbidden);
             }
             let status = match decision.decision {
@@ -376,22 +387,24 @@ async fn chat_stream(
     };
     let _ = session_repo::add_message(&pool, &session_id, &user_msg).await;
 
-    // 创建 SSE channel
-    let (sse_tx, sse_rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(256);
+    // 登记后台任务；进度写入任务的回放缓冲，任何时候都可以订阅
+    let title: String = user_msg.content.chars().take(40).collect();
+    let (sink, cancel) = crate::tasks::create(&pool, owner_id, &session_id, origin, &title, &req).await?;
+    let task_id = sink.task_id.clone();
 
     // clone 必要数据给 agent 任务
-    let user_id = user.0.id.clone();
+    let user_id = owner_id.to_string();
     let project_id = req.project_id.clone();
     let user_message = build_user_message(&req);
 
     // 工作区概览 + 本轮 @ 引用的文件（Ask 模式也需要：只读工具可用）
     let workspace_note = {
-        let overview = crate::workspace::overview(&pool, &user.0.id).await.unwrap_or_else(|e| {
+        let overview = crate::workspace::overview(&pool, &owner_id).await.unwrap_or_else(|e| {
             tracing::warn!("[Workspace] 生成概览失败: {e:?}");
             String::new()
         });
         let refs = match req.file_refs.as_deref().filter(|ids| !ids.is_empty()) {
-            Some(ids) => match crate::workspace::Tree::load(&pool, &user.0.id).await {
+            Some(ids) => match crate::workspace::Tree::load(&pool, &owner_id).await {
                 Ok(tree) => crate::workspace::referenced_files_note(&tree, ids),
                 Err(_) => String::new(),
             },
@@ -401,7 +414,7 @@ async fn chat_stream(
     };
 
     // 技能：清单（名称 + 简介）+ 用户显式选择的技能正文；显式技能声明了本系统的工具时缩小工具范围
-    let all_skills = crate::skills::load_all(&pool, &user.0.id).await.unwrap_or_else(|e| {
+    let all_skills = crate::skills::load_all(&pool, &owner_id).await.unwrap_or_else(|e| {
         tracing::warn!("[Skills] 加载失败: {e:?}");
         Vec::new()
     });
@@ -470,10 +483,8 @@ async fn chat_stream(
     };
 
     // 创建 tool context 的 emit 回调
-    let sse_tx_clone = sse_tx.clone();
-    let emit = move |event: &str, data: serde_json::Value| {
-        let _ = sse_tx_clone.try_send(Ok(Event::default().event(event).data(data.to_string())));
-    };
+    let emit_sink = sink.clone();
+    let emit = move |event: &str, data: serde_json::Value| emit_sink.emit(event, data);
 
     let ctx = crate::agent::tool::ToolContext::new(
         session_id.clone(),
@@ -490,6 +501,10 @@ async fn chat_stream(
     let pool_for_save = pool.clone();
     let user_id_for_save = user_id.clone();
     let existing_artifacts_for_save = existing_artifacts.clone();
+    sink.emit(
+        "run_start",
+        serde_json::json!({ "session_id": session_id, "run_id": task_id, "task_id": task_id }),
+    );
     if let Some(attachments) = req.attachments.as_ref() {
         ctx.send(
             "state_update",
@@ -503,27 +518,17 @@ async fn chat_stream(
         );
     }
 
-    // 登记运行，前端凭 session_id 调用 /api/chat/cancel 停止
-    let (run_id, cancel) = register_run(&session_id, &user_id);
-    let _ = sse_tx
-        .send(Ok(Event::default().event("run_start").data(
-            serde_json::json!({ "session_id": session_id, "run_id": run_id }).to_string(),
-        )))
-        .await;
-
-    // 启动 agent 循环
-    let mut event_rx = run_agent_loop(
-        start,
-        req.attachments.clone().unwrap_or_default(),
-        ctx,
-        agent_config,
-        client.clone(),
-        cancel,
-    )
-    .await;
     let requested_tool_kind = resolved_tool_kind.clone();
+    let attachments = req.attachments.clone().unwrap_or_default();
+    let started = StartedTask { task_id: task_id.clone(), session_id: session_id.clone() };
 
     tokio::spawn(async move {
+        // 排队等待运行名额（每个用户同时运行的任务数有上限）
+        let _permit = crate::tasks::acquire_slot(&pool_for_save, &sink, &user_id_for_save).await;
+        let mut event_rx = run_agent_loop(start, attachments, ctx, agent_config, client.clone(), cancel).await;
+        let mut final_status = "failed";
+        let mut final_summary: Option<String> = None;
+        let mut final_error: Option<String> = Some("运行意外结束".to_string());
         let mut total_usage = crate::llm::Usage::default();
         let mut collected_artifacts: Vec<crate::models::Artifact> = Vec::new();
         let mut saved_artifact_ids = HashSet::new();
@@ -531,33 +536,33 @@ async fn chat_stream(
         while let Some(event) = event_rx.recv().await {
             let sse_event = match &event {
                 AgentEvent::TextDelta { text } => Some(
-                    Event::default().event("message").data(serde_json::json!({
+                    ("message", serde_json::json!({
                         "text": text,
                         "session_id": session_id_for_save,
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::ToolStart { call_id, tool } => Some(
-                    Event::default().event("tool_start").data(serde_json::json!({
+                    ("tool_start", serde_json::json!({
                         "call_id": call_id,
                         "tool": tool,
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::ToolCall { call_id, tool, input } => Some(
-                    Event::default().event("tool_call").data(serde_json::json!({
+                    ("tool_call", serde_json::json!({
                         "call_id": call_id,
                         "tool": tool,
                         "input": input,
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::ToolResult { call_id, tool, success, result, error, duration_ms } => Some(
-                    Event::default().event("tool_result").data(serde_json::json!({
+                    ("tool_result", serde_json::json!({
                         "call_id": call_id,
                         "tool": tool,
                         "success": success,
                         "result": result,
                         "error": error,
                         "duration_ms": duration_ms,
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::PlanProposed { plan, call_id, other_call_ids, conversation } => {
                     match agent_run_repo::create(
@@ -572,31 +577,31 @@ async fn chat_stream(
                     )
                     .await
                     {
-                        Ok(plan_run_id) => Some(Event::default().event("plan_proposed").data(serde_json::json!({
+                        Ok(plan_run_id) => Some(("plan_proposed", serde_json::json!({
                             "run_id": plan_run_id,
                             "plan": plan,
                             "session_id": session_id_for_save,
-                        }).to_string())),
+                        }))),
                         Err(e) => {
                             tracing::error!("[Plan] 保存待确认计划失败: {e:?}");
-                            Some(Event::default().event("error").data(serde_json::json!({
+                            Some(("error", serde_json::json!({
                                 "message": "计划保存失败，请重试",
-                            }).to_string()))
+                            })))
                         }
                     }
                 }
                 AgentEvent::PlanProgress { step_id, success } => Some(
-                    Event::default().event("plan_progress").data(serde_json::json!({
+                    ("plan_progress", serde_json::json!({
                         "step_id": step_id,
                         "success": success,
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::Usage { usage } => {
                     total_usage.add(*usage);
-                    Some(Event::default().event("usage").data(serde_json::json!({
+                    Some(("usage", serde_json::json!({
                         "prompt_tokens": total_usage.prompt_tokens,
                         "completion_tokens": total_usage.completion_tokens,
-                    }).to_string()))
+                    })))
                 }
                 AgentEvent::Artifact { artifact } => {
                     // 记录版本历史（AI 修订的版本号若被占用会顺延）
@@ -628,24 +633,33 @@ async fn chat_stream(
                         &session_id_for_save,
                         &session_artifacts,
                     ).await;
-                    Some(Event::default().event("artifact_update").data(serde_json::json!({
+                    Some(("artifact_update", serde_json::json!({
                         "artifact": artifact,
                         "artifacts": session_artifacts,
                         "session_id": session_id_for_save,
                         "tool_kind": artifact.tool_kind,
-                    }).to_string()))
+                    })))
                 }
                 // 文本已通过 TextDelta 推送，这里只用于持久化
                 AgentEvent::Message { .. } => None,
                 AgentEvent::TurnEnd { turn } => Some(
-                    Event::default().event("state_update").data(serde_json::json!({
+                    ("state_update", serde_json::json!({
                         "phase": "running",
                         "step": format!("第 {turn} 轮完成"),
                         "detail": format!("已完成 {turn} 轮工具调用"),
                         "at": chrono::Utc::now().to_rfc3339(),
-                    }).to_string()),
+                    })),
                 ),
                 AgentEvent::Done { summary, artifacts, cancelled, awaiting_approval } => {
+                    final_status = if *cancelled {
+                        "cancelled"
+                    } else if *awaiting_approval {
+                        "awaiting_approval"
+                    } else {
+                        "succeeded"
+                    };
+                    final_summary = Some(summary.clone());
+                    final_error = None;
                     if collected_artifacts.is_empty() {
                         collected_artifacts = artifacts.clone();
                     }
@@ -677,7 +691,7 @@ async fn chat_stream(
                             &session_artifacts,
                         ).await;
                     }
-                    Some(Event::default().event("done").data(serde_json::json!({
+                    Some(("done", serde_json::json!({
                         "session_id": session_id_for_save,
                         "summary": summary,
                         "artifacts": session_artifacts,
@@ -685,17 +699,19 @@ async fn chat_stream(
                         "cancelled": cancelled,
                         "awaiting_approval": awaiting_approval,
                         "usage": total_usage,
-                    }).to_string()))
+                    })))
                 }
-                AgentEvent::Error { message } => Some(
-                    Event::default().event("error").data(serde_json::json!({
+                AgentEvent::Error { message } => {
+                    final_status = "failed";
+                    final_error = Some(message.clone());
+                    Some(
+                    ("error", serde_json::json!({
                         "message": message,
-                    }).to_string()),
-                ),
+                    })),
+                )}
             };
-            if let Some(sse_event) = sse_event {
-                // 前端断开（刷新/关页）不中断任务：继续执行并保存产物，只有显式停止才取消
-                let _ = sse_tx.send(Ok(sse_event)).await;
+            if let Some((name, data)) = sse_event {
+                sink.emit(name, data);
             }
 
             // 保存 assistant 消息
@@ -710,9 +726,34 @@ async fn chat_stream(
                     session_repo::add_message(&pool_for_save, &session_id_for_save, &assistant_msg).await;
             }
         }
-        unregister_run(&session_id_for_save, &run_id);
+        // 运行结束：没有收到 done / error（例如 panic）时补发一个 error，订阅者不会一直等待
+        if final_status == "failed" && final_summary.is_none() {
+            sink.emit("error", serde_json::json!({ "message": final_error.clone().unwrap_or_default() }));
+        }
+        let unwatched = sink.watchers() == 0;
+        crate::tasks::finish(&pool_for_save, &sink, final_status, final_summary.as_deref(), final_error.as_deref()).await;
+        // 没有页面在看时（关掉了页面、定时任务、IM），完成后发通知
+        if unwatched && final_status != "cancelled" {
+            let (title, content) = match final_status {
+                "succeeded" => (format!("任务完成：{title}"), final_summary.clone().unwrap_or_default()),
+                "awaiting_approval" => (format!("计划待确认：{title}"), "Agent 提交了执行计划，请打开对话确认".to_string()),
+                _ => (format!("任务失败：{title}"), final_error.clone().unwrap_or_default()),
+            };
+            let content: String = content.chars().take(200).collect();
+            if let Err(e) = crate::db::notification_repo::create(
+                &pool_for_save,
+                &user_id_for_save,
+                "task",
+                &title,
+                &content,
+                Some(&format!("/?s={session_id_for_save}")),
+            )
+            .await
+            {
+                tracing::warn!("[Task] 写入通知失败: {e:?}");
+            }
+        }
     });
 
-    let stream = ReceiverStream::new(sse_rx);
-    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+    Ok(started)
 }
