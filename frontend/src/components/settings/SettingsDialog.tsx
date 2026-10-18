@@ -1,8 +1,8 @@
-import { Check, KeyRound, MessageSquare, Plus, Trash2, X } from 'lucide-react'
+import { Check, KeyRound, MessageSquare, Plus, Puzzle, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { settingsApi } from '@/api'
 import { ImChannelsPanel } from './ImChannelsPanel'
-import type { AppSettings, LLMProfile, MCPServiceConfig } from '@/types'
+import { McpPluginsPanel } from './McpPluginsPanel'
+import type { AppSettings, LLMProfile } from '@/types'
 
 interface SettingsDialogProps {
   open: boolean
@@ -29,21 +29,10 @@ function getProfileKeys(profile: LLMProfile) {
   return Array.from(new Set(merged))
 }
 
-const emptyMcpServer = (): MCPServiceConfig => ({
-  id: `mcp-${Date.now()}`,
-  name: '新的 MCP 服务',
-  transport: 'http',
-  endpoint: 'http://127.0.0.1:3001',
-  enabled: true,
-  description: '',
-})
-
 export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDialogProps) {
   const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im'>('mcp')
   const [draft, setDraft] = useState<AppSettings | null>(settings)
   const [saving, setSaving] = useState(false)
-  const [testingMcpId, setTestingMcpId] = useState<string | null>(null)
-  const [mcpTestResults, setMcpTestResults] = useState<Record<string, { ok: boolean; message: string; tools: string[] }>>({})
 
   useEffect(() => {
     setDraft(settings)
@@ -101,45 +90,6 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
     })
   }
 
-  const updateMcp = (id: string, patch: Partial<MCPServiceConfig>) => {
-    updateDraft({
-      mcp_servers: draft.mcp_servers.map((server) => (server.id === id ? { ...server, ...patch } : server)),
-    })
-  }
-
-  const addMcp = () => updateDraft({ mcp_servers: [...draft.mcp_servers, emptyMcpServer()] })
-
-  const removeMcp = (id: string) => updateDraft({ mcp_servers: draft.mcp_servers.filter((server) => server.id !== id) })
-
-  const testMcp = async (server: MCPServiceConfig) => {
-    setTestingMcpId(server.id)
-    try {
-      const res = await settingsApi.testMcp(server)
-      const tools = Array.isArray(res.data?.tools)
-        ? res.data.tools.map((item: any) => item?.name).filter(Boolean)
-        : []
-      setMcpTestResults((prev) => ({
-        ...prev,
-        [server.id]: {
-          ok: !!res.data?.ok,
-          message: res.data?.message || '测试完成',
-          tools,
-        },
-      }))
-    } catch (err: any) {
-      setMcpTestResults((prev) => ({
-        ...prev,
-        [server.id]: {
-          ok: false,
-          message: err.response?.data?.detail || err.message || '测试失败',
-          tools: [],
-        },
-      }))
-    } finally {
-      setTestingMcpId(null)
-    }
-  }
-
   const handleSave = async () => {
     if (!draft) return
     setSaving(true)
@@ -170,7 +120,7 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
 
           <div className="flex gap-1.5 overflow-x-auto md:block md:space-y-1.5">
             {[
-              ['mcp', 'MCP 服务', KeyRound],
+              ['mcp', '插件（MCP）', Puzzle],
               ['im', 'IM 接入', MessageSquare],
             ].map(([key, label, Icon]: any) => (
               <button
@@ -349,109 +299,10 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
 
           {section === 'im' && <ImChannelsPanel />}
 
-          {section === 'mcp' && (
-            <div>
-              <div className="mb-5 flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold tracking-tight text-surface-950">MCP 服务</h2>
-                  <p className="mt-1 text-sm text-surface-500">保存常用 MCP 服务的地址和启用状态，方便后续接入。</p>
-                </div>
-                <button onClick={addMcp} className="inline-flex items-center gap-1.5 rounded-full bg-surface-950 px-4 py-2 text-sm font-semibold text-white hover:bg-surface-800">
-                  <Plus className="h-4 w-4" />
-                  添加服务
-                </button>
-              </div>
+          {section === 'mcp' && <McpPluginsPanel />}
 
-              <div className="space-y-4">
-                {draft.mcp_servers.length === 0 && (
-                  <div className="rounded-[1.6rem] border border-dashed border-black/10 bg-white/65 px-4 py-8 text-center text-sm text-surface-500">
-                    还没有 MCP 服务配置，添加后会保存在当前账号下。
-                  </div>
-                )}
-                {draft.mcp_servers.map((server) => (
-                  <div key={server.id} className="rounded-[1.6rem] border border-black/[0.06] bg-white/75 p-4 shadow-sm">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <input
-                          value={server.name}
-                          onChange={(event) => updateMcp(server.id, { name: event.target.value })}
-                          className="w-full bg-transparent text-base font-bold text-surface-950 outline-none"
-                          placeholder="服务名称"
-                        />
-                        <div className="mt-1 text-[11px] text-surface-400">{server.enabled ? '已启用' : '已停用'}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => testMcp(server)}
-                          disabled={testingMcpId === server.id}
-                          className="rounded-full border border-black/10 bg-white px-3 py-1 text-xs font-semibold text-surface-600 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {testingMcpId === server.id ? '测试中...' : '测试连接'}
-                        </button>
-                        <label className="flex items-center gap-2 text-xs font-semibold text-surface-500">
-                          <input
-                            type="checkbox"
-                            checked={server.enabled}
-                            onChange={(event) => updateMcp(server.id, { enabled: event.target.checked })}
-                          />
-                          启用
-                        </label>
-                        <button onClick={() => removeMcp(server.id)} className="rounded-full p-2 text-surface-400 hover:bg-red-50 hover:text-red-600" title="删除服务">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="block text-xs font-semibold text-surface-500">
-                        传输方式
-                        <select
-                          value={server.transport}
-                          onChange={(event) => updateMcp(server.id, { transport: event.target.value })}
-                          className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-surface-500"
-                        >
-                          <option value="http">HTTP</option>
-                          <option value="sse">SSE</option>
-                          <option value="stdio">STDIO</option>
-                        </select>
-                      </label>
-                      <label className="block text-xs font-semibold text-surface-500">
-                        服务地址
-                        <input
-                          value={server.endpoint}
-                          onChange={(event) => updateMcp(server.id, { endpoint: event.target.value })}
-                          className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-surface-500"
-                        />
-                      </label>
-                      <label className="block text-xs font-semibold text-surface-500 md:col-span-2">
-                        描述
-                        <input
-                          value={server.description || ''}
-                          onChange={(event) => updateMcp(server.id, { description: event.target.value })}
-                          className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-surface-500"
-                        />
-                      </label>
-                    </div>
-
-                    {mcpTestResults[server.id] && (
-                      <div className={`mt-3 rounded-2xl border px-3 py-2 text-xs ${mcpTestResults[server.id].ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'}`}>
-                        <div className="font-semibold">{mcpTestResults[server.id].message}</div>
-                        {mcpTestResults[server.id].tools.length > 0 && (
-                          <div className="mt-1 text-[11px]">
-                            可用工具：{mcpTestResults[server.id].tools.join(' / ')}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* IM 接入的修改即时保存，不需要底部的保存按钮 */}
-          {section !== 'im' && <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
+          {/* 插件与 IM 接入的修改即时保存，不需要底部的保存按钮 */}
+          {section !== 'im' && section !== 'mcp' && <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
             <button onClick={onClose} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-surface-600 hover:bg-surface-50">
               取消
             </button>

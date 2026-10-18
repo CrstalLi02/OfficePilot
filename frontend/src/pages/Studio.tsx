@@ -2142,7 +2142,7 @@ export default function Studio() {
               <button
                 onClick={() => setActiveView(activeView === 'settings' ? 'chat' : 'settings')}
                 className={`btn-ghost shrink-0 rounded-full hover:bg-white/75 ${activeView === 'settings' ? 'bg-white/90' : 'bg-white/45'}`}
-                title="设置（MCP 服务、IM 接入）"
+                title="设置（插件、IM 接入）"
               >
                 <Settings className="w-4 h-4" />
               </button>

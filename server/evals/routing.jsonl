@@ -65,3 +65,7 @@
 {"id": "schedule-daily-news", "category": "schedule", "message": "以后每天早上9点帮我整理一份AI行业新闻简报", "expect": ["schedule_create"], "forbid": ["video_generate"]}
 {"id": "schedule-monthly", "category": "schedule", "message": "每个月1号提醒我整理上个月的报销单据，生成一份清单", "expect": ["schedule_create"], "forbid": ["video_generate", "image_prompt"]}
 {"id": "schedule-list", "category": "schedule", "message": "我现在都设置了哪些定时任务？", "expect": ["schedule_list"], "forbid": ["schedule_create"]}
+{"id": "mcp-weather", "category": "mcp", "requires_mcp": true, "message": "明天去杭州出差，帮我看看那边今天天气怎么样", "expect": ["mcp__demo__get_weather"]}
+{"id": "mcp-rate", "category": "mcp", "requires_mcp": true, "message": "100 欧元现在能换多少人民币？", "expect": ["mcp__demo__get_exchange_rate"]}
+{"id": "mcp-ticket", "category": "mcp", "requires_mcp": true, "message": "帮我给 IT 提个工单：大会议室投影仪不亮，优先级中", "expect": ["mcp__demo__create_ticket"], "forbid": ["doc_generate", "sheet_generate"]}
+{"id": "mcp-not-hijacked", "category": "mcp", "requires_mcp": true, "message": "写一份关于外汇风险管理制度的 Word 文档", "expect_any": ["doc_generate", "use_skill"], "forbid": ["mcp__demo__create_ticket", "mcp__demo__get_weather"]}

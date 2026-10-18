@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, ClipboardList, Loader2, Play, RotateCcw, X } from 'lucide-react'
 import type { PlanCardState, PlanDecisionKind, PlanStep } from '@/types'
-import { TOOL_META } from './RunTimeline'
+import { TOOL_META, mcpMeta } from './RunTimeline'
 
 const STATUS_LABEL: Record<PlanCardState['status'], string> = {
   pending: '等待确认',
@@ -48,7 +48,7 @@ export function PlanCard({ state, busy, onDecide }: PlanCardProps) {
 
       <ol className="space-y-1 px-3 py-2">
         {plan.steps.map((step, index) => {
-          const meta = TOOL_META[step.tool]
+          const meta = TOOL_META[step.tool] || mcpMeta(step.tool)
           const Icon = meta?.icon
           const skipped = executedIds !== null && !executedIds.has(step.id)
           const progress = state.stepStatus?.[step.id]
