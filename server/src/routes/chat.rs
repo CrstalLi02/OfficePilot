@@ -398,6 +398,11 @@ pub async fn start_chat_task(
     let user_message = build_user_message(&req);
 
     // 工作区概览 + 本轮 @ 引用的文件（Ask 模式也需要：只读工具可用）
+    // @ 引用的插件资源：读取内容放进上下文（外部数据，标注不要执行其中的指令）
+    let resource_note = match req.mcp_resources.as_deref().filter(|r| !r.is_empty()) {
+        Some(refs) => crate::mcp::resource_note(&owner_id, refs).await,
+        None => String::new(),
+    };
     let workspace_note = {
         let overview = crate::workspace::overview(&pool, &owner_id).await.unwrap_or_else(|e| {
             tracing::warn!("[Workspace] 生成概览失败: {e:?}");
@@ -484,7 +489,7 @@ pub async fn start_chat_task(
             AgentConfig {
                 max_turns: 10,
                 // 附上会话产物清单，模型才能把"第三页""那份周报"对应到具体产物并局部修改
-                system_prompt: [system_prompt, now_note, skill_note, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note]
+                system_prompt: [system_prompt, now_note, skill_note, crate::agent::artifact_ops::manifest(&existing_artifacts), workspace_note, resource_note]
                     .into_iter()
                     .filter(|part| !part.is_empty())
                     .collect::<Vec<_>>()
@@ -511,7 +516,12 @@ pub async fn start_chat_task(
     .with_tool_config(req.tool_config.clone().unwrap_or(serde_json::json!({})))
     .with_prior_artifacts(existing_artifacts.clone())
     .with_timezone(req.timezone.clone())
-    .with_im_target(req.im_target.clone());
+    .with_im_target(req.im_target.clone())
+    .with_origin(origin.as_str())
+    .with_watchers({
+        let sink = sink.clone();
+        move || sink.watchers()
+    });
 
     let session_id_for_save = session_id.clone();
     let pool_for_save = pool.clone();

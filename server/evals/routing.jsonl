@@ -69,3 +69,4 @@
 {"id": "mcp-rate", "category": "mcp", "requires_mcp": true, "message": "100 欧元现在能换多少人民币？", "expect": ["mcp__demo__get_exchange_rate"]}
 {"id": "mcp-ticket", "category": "mcp", "requires_mcp": true, "message": "帮我给 IT 提个工单：大会议室投影仪不亮，优先级中", "expect": ["mcp__demo__create_ticket"], "forbid": ["doc_generate", "sheet_generate"]}
 {"id": "mcp-not-hijacked", "category": "mcp", "requires_mcp": true, "message": "写一份关于外汇风险管理制度的 Word 文档", "expect_any": ["doc_generate", "use_skill"], "forbid": ["mcp__demo__create_ticket", "mcp__demo__get_weather"]}
+{"id": "mcp-ticket-after-history", "category": "mcp", "requires_mcp": true, "history": [{"role": "user", "content": "帮我提个工单：财务室空调不制冷，优先级高"}, {"role": "assistant", "content": "工单已创建成功 ✅\n\n- **工单编号**：T-1001\n- **标题**：财务室空调不制冷\n- **优先级**：高"}], "message": "再提一个工单：前台电话坏了，优先级中", "expect": ["mcp__demo__create_ticket"]}

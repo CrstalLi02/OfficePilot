@@ -414,7 +414,23 @@ async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg:
 /// 卡片按钮：目前是计划的「确认执行」「取消」
 async fn handle_card_action(pool: &DbPool, channel: &Channel, client: &feishu::Client, action: &feishu::CardAction) -> anyhow::Result<()> {
     if !super::is_bound(pool, &channel.id, &action.operator_id).await? {
-        client.reply(&action.message_id, "text", &json!({ "text": "你还没有绑定账号，不能操作这个计划" })).await?;
+        client.reply(&action.message_id, "text", &json!({ "text": "你还没有绑定账号，不能操作这张卡片" })).await?;
+        return Ok(());
+    }
+    if action.value.get("kind").and_then(Value::as_str) == Some("tool_approval") {
+        use crate::agent::approval::{owner_of, resolve, Decision};
+        let id = action.value.get("approval_id").and_then(Value::as_str).unwrap_or_default();
+        let decision = if action.value.get("decision").and_then(Value::as_str) == Some("approve") { Decision::Approve } else { Decision::Reject };
+        let remember = action.value.get("remember").and_then(Value::as_bool).unwrap_or(false);
+        // 确认必须属于这个机器人所属用户的运行
+        let result = match owner_of(id) {
+            Some(owner) if owner == channel.owner_id => resolve(id, &owner, decision, remember),
+            Some(_) => Err("无权处理这个确认".into()),
+            None => Err("这个确认已经处理过或已过期".into()),
+        };
+        if let Err(e) = result {
+            client.reply(&action.message_id, "text", &json!({ "text": e })).await?;
+        }
         return Ok(());
     }
     if action.value.get("kind").and_then(Value::as_str) != Some("plan") {
@@ -582,6 +598,10 @@ pub struct Progress {
     plan: Option<(String, String)>,
     finished: Option<Value>,
     error: Option<String>,
+    /// 新出现、还没发到 IM 的确认请求
+    new_approvals: Vec<Value>,
+    /// 已处理的确认：(approval_id, 结果)
+    resolutions: Vec<(String, String)>,
 }
 
 impl Progress {
@@ -623,6 +643,16 @@ impl Progress {
                     .unwrap_or_default();
                 self.plan = Some((run_id, plan));
                 true
+            }
+            "tool_approval" => {
+                self.new_approvals.push(d.clone());
+                false
+            }
+            "tool_approval_resolved" => {
+                let id = d.get("approval_id").and_then(Value::as_str).unwrap_or_default().to_string();
+                let decision = d.get("decision").and_then(Value::as_str).unwrap_or("rejected").to_string();
+                self.resolutions.push((id, decision));
+                false
             }
             "done" => {
                 self.finished = Some(d.clone());
@@ -721,7 +751,10 @@ async fn pump(job: Job) {
     }
     let mut dirty = true;
     let mut ticker = tokio::time::interval(CARD_UPDATE_EVERY);
+    // 确认请求对应的飞书卡片
+    let mut approval_cards: HashMap<String, (String, String)> = HashMap::new();
     while !progress.is_finished() {
+        sync_approvals(&client, &target, &mut progress, &mut approval_cards).await;
         tokio::select! {
             ev = rx.recv() => match ev {
                 Ok(ev) => dirty |= progress.apply(&ev),
@@ -738,6 +771,12 @@ async fn pump(job: Job) {
                 }
             }
         }
+    }
+
+    sync_approvals(&client, &target, &mut progress, &mut approval_cards).await;
+    // 运行结束时还没处理的确认卡片标记为失效
+    for (card_id, title) in approval_cards.values() {
+        let _ = client.update_card(card_id, &feishu::card(title, Tone::Neutral, "运行已结束，这个确认已失效", None, None)).await;
     }
 
     let pool = crate::state::db_pool();
@@ -808,6 +847,43 @@ async fn pump(job: Job) {
         if let Err(e) = sent {
             tracing::warn!("[IM] 发送文件 {name} 失败：{e:#}");
             let _ = target.post(&client, "text", &json!({ "text": format!("文件「{name}」发送失败：{e}") })).await;
+        }
+    }
+}
+
+/// 把新的确认请求发成带按钮的卡片，已处理的更新为结果
+async fn sync_approvals(client: &feishu::Client, target: &Target, progress: &mut Progress, cards: &mut HashMap<String, (String, String)>) {
+    for request in std::mem::take(&mut progress.new_approvals) {
+        let id = request.get("approval_id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let text = |k: &str| request.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        let title = format!("需要确认：{} · {}", text("source"), text("label"));
+        let args = request.get("arguments").map(|a| serde_json::to_string_pretty(a).unwrap_or_default()).unwrap_or_default();
+        let mut body = format!("{}，10 分钟内没有处理会自动拒绝。", text("reason"));
+        if !args.is_empty() && args != "{}" {
+            body.push_str(&format!("\n\n**参数**\n{}", feishu::truncate(&args, 1500)));
+        }
+        let value = |decision: &str, remember: bool| json!({ "kind": "tool_approval", "approval_id": id, "decision": decision, "remember": remember });
+        let buttons = vec![
+            feishu::callback_button("允许", true, value("approve", false)),
+            feishu::callback_button("本次对话都允许", false, value("approve", true)),
+            feishu::callback_button("拒绝", false, value("reject", false)),
+        ];
+        match target.post(client, "interactive", &feishu::card_with_buttons(&title, Tone::Warning, &body, None, None, buttons)).await {
+            Ok(card_id) => {
+                cards.insert(id, (card_id, title));
+            }
+            Err(e) => tracing::warn!("[IM] 发送确认卡片失败：{e:#}"),
+        }
+    }
+    for (id, decision) in std::mem::take(&mut progress.resolutions) {
+        if let Some((card_id, title)) = cards.remove(&id) {
+            let (tone, text) = match decision.as_str() {
+                "approved" => (Tone::Success, "已允许，继续执行"),
+                "expired" => (Tone::Neutral, "超时未处理，已自动拒绝"),
+                "cancelled" => (Tone::Neutral, "运行已停止"),
+                _ => (Tone::Neutral, "已拒绝，没有执行"),
+            };
+            let _ = client.update_card(&card_id, &feishu::card(&title, tone, text, None, None)).await;
         }
     }
 }

@@ -20,6 +20,105 @@ pub fn router() -> Router {
         .route("/api/mcp/servers/:id/test", post(test))
         .route("/api/mcp/servers/:id/tools", get(tools).put(set_tools))
         .route("/api/mcp/import", post(import))
+        .route("/api/mcp/resources", get(all_resources))
+        .route("/api/mcp/prompts", get(all_prompts))
+        .route("/api/mcp/servers/:id/prompts/get", post(get_prompt))
+        .route("/api/mcp/catalog", get(catalog))
+        .route("/api/mcp/catalog/:id/install", post(install))
+}
+
+/// 插件目录：标出哪些已添加、哪些因服务端没开 stdio 而不可用
+async fn catalog(user: AuthUser) -> Result<Json<Value>, AppError> {
+    let servers = mcp::list(&state::db_pool(), &user.0.id).await?;
+    let stdio = mcp::stdio_enabled();
+    let items: Vec<Value> = mcp::catalog::entries()
+        .iter()
+        .map(|e| {
+            let mut v = json!(e);
+            v["available"] = json!(e.transport != "stdio" || stdio);
+            v["installed"] = json!(servers.iter().any(|s| s.config.catalog_id.as_deref() == Some(e.id.as_str())));
+            v
+        })
+        .collect();
+    Ok(Json(json!({ "entries": items })))
+}
+
+#[derive(Deserialize)]
+struct InstallInput {
+    #[serde(default)]
+    fields: std::collections::HashMap<String, String>,
+}
+
+/// 从目录添加插件：用填写的字段生成配置并创建
+async fn install(user: AuthUser, Path(id): Path<String>, Json(input): Json<InstallInput>) -> Result<Json<Value>, AppError> {
+    let entry = mcp::catalog::find(&id).ok_or_else(|| AppError::NotFound("目录里没有这个插件".into()))?;
+    let server_input = mcp::catalog::to_input(entry, &input.fields).map_err(AppError::BadRequest)?;
+    Ok(Json(mcp::create(&state::db_pool(), &user.0.id, &server_input).await?.public_json()))
+}
+
+/// 已启用插件（每个最多等 8 秒）
+async fn enabled_servers(owner_id: &str) -> Result<Vec<McpServer>, AppError> {
+    Ok(mcp::list(&state::db_pool(), owner_id).await?.into_iter().filter(|s| s.enabled && !s.secrets_broken).collect())
+}
+
+const LIST_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// 所有已启用插件的资源（@ 菜单用）；模板资源需要参数，暂不列出
+async fn all_resources(user: AuthUser) -> Result<Json<Value>, AppError> {
+    let servers = enabled_servers(&user.0.id).await?;
+    let loads = servers.iter().map(|s| async move { (s, tokio::time::timeout(LIST_WAIT, pool::resources(s)).await) });
+    let mut items = Vec::new();
+    let mut errors = Vec::new();
+    for (server, result) in futures::future::join_all(loads).await {
+        match result {
+            Ok(Ok(list)) => items.extend(list.into_iter().filter(|r| !r.template).map(|r| {
+                json!({ "server_id": server.id, "server_name": server.name, "uri": r.uri, "name": r.name, "title": r.title, "description": r.description, "mime_type": r.mime_type })
+            })),
+            Ok(Err(e)) => errors.push(format!("{}：{e}", server.name)),
+            Err(_) => errors.push(format!("{}：连接超时", server.name)),
+        }
+    }
+    Ok(Json(json!({ "resources": items, "errors": errors })))
+}
+
+/// 所有已启用插件的提示词（/ 菜单用）
+async fn all_prompts(user: AuthUser) -> Result<Json<Value>, AppError> {
+    let servers = enabled_servers(&user.0.id).await?;
+    let loads = servers.iter().map(|s| async move { (s, tokio::time::timeout(LIST_WAIT, pool::prompts(s)).await) });
+    let mut items = Vec::new();
+    let mut errors = Vec::new();
+    for (server, result) in futures::future::join_all(loads).await {
+        match result {
+            Ok(Ok(list)) => items.extend(list.into_iter().map(|p| {
+                json!({ "server_id": server.id, "server_name": server.name, "name": p.name, "title": p.title, "description": p.description, "arguments": p.arguments })
+            })),
+            Ok(Err(e)) => errors.push(format!("{}：{e}", server.name)),
+            Err(_) => errors.push(format!("{}：连接超时", server.name)),
+        }
+    }
+    Ok(Json(json!({ "prompts": items, "errors": errors })))
+}
+
+#[derive(Deserialize)]
+struct PromptInput {
+    name: String,
+    #[serde(default)]
+    arguments: serde_json::Map<String, Value>,
+}
+
+/// 渲染提示词：返回填进输入框的文本
+async fn get_prompt(user: AuthUser, Path(id): Path<String>, Json(input): Json<PromptInput>) -> Result<Json<Value>, AppError> {
+    let server = mcp::get(&state::db_pool(), &user.0.id, &id).await?;
+    // MCP 规定参数值都是字符串
+    let arguments: serde_json::Map<String, Value> = input
+        .arguments
+        .into_iter()
+        .map(|(k, v)| (k, Value::String(v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))))
+        .collect();
+    let result = pool::get_prompt(&server, &input.name, Value::Object(arguments))
+        .await
+        .map_err(|e| AppError::BadRequest(format!("获取提示词失败：{e}")))?;
+    Ok(Json(json!({ "text": pool::prompt_text(&result), "description": result.get("description") })))
 }
 
 /// 服务端是否允许本地命令、内网地址（界面据此提示）
@@ -68,7 +167,7 @@ fn tools_json(server: &McpServer, tools: &[mcp::client::ToolInfo]) -> Vec<Value>
                 "name": t.name,
                 "title": t.title,
                 "description": t.description,
-                "read_only": t.read_only,
+                "read_only": t.read_only || server.config.assume_read_only,
                 "enabled": !server.config.disabled_tools.contains(&t.name),
                 "exposed_name": mcp::exposed_name(&server.slug, &t.name),
             })
@@ -150,6 +249,10 @@ pub fn input_from_entry(name: &str, entry: &Value) -> Result<ServerInput, String
         headers: pairs("headers"),
         env: pairs("env"),
         enabled: Some(!entry.get("disabled").and_then(Value::as_bool).unwrap_or(false)),
+        approval: None,
+        assume_read_only: None,
+        query: vec![],
+        catalog_id: None,
     })
 }
 

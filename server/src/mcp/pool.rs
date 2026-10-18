@@ -155,6 +155,87 @@ pub async fn call(server: &McpServer, tool: &str, arguments: Value) -> Result<Va
     unreachable!()
 }
 
+async fn session_for(server: &McpServer, fresh: bool) -> Result<Arc<Session>, McpError> {
+    let entry = entry_for(server);
+    let mut guard = entry.lock().await;
+    if fresh {
+        guard.session = None;
+    }
+    session_in(&mut guard, server).await
+}
+
+/// 用会话执行一次请求；会话失效时重连后重试一次
+macro_rules! with_session {
+    ($server:expr, |$s:ident| $body:expr) => {{
+        let mut result = None;
+        for attempt in 0..2 {
+            let $s = session_for($server, attempt > 0).await?;
+            match $body.await {
+                Err(e) if e.retryable() && attempt == 0 => continue,
+                other => {
+                    result = Some(other);
+                    break;
+                }
+            }
+        }
+        result.expect("至少执行一次")
+    }};
+}
+
+pub async fn resources(server: &McpServer) -> Result<Vec<super::client::ResourceInfo>, McpError> {
+    with_session!(server, |s| s.list_resources())
+}
+
+pub async fn prompts(server: &McpServer) -> Result<Vec<super::client::PromptInfo>, McpError> {
+    with_session!(server, |s| s.list_prompts())
+}
+
+pub async fn read_resource(server: &McpServer, uri: &str) -> Result<Value, McpError> {
+    with_session!(server, |s| s.read_resource(uri))
+}
+
+pub async fn get_prompt(server: &McpServer, name: &str, arguments: Value) -> Result<Value, McpError> {
+    with_session!(server, |s| s.get_prompt(name, arguments.clone()))
+}
+
+/// resources/read 的结果 → 文本（二进制只给类型和大小）
+pub fn resource_text(result: &Value, max_chars: usize) -> String {
+    let mut parts = Vec::new();
+    for item in result.get("contents").and_then(Value::as_array).into_iter().flatten() {
+        if let Some(text) = item.get("text").and_then(Value::as_str) {
+            parts.push(text.to_string());
+        } else if let Some(blob) = item.get("blob").and_then(Value::as_str) {
+            let mime = item.get("mimeType").and_then(Value::as_str).unwrap_or("application/octet-stream");
+            parts.push(format!("[二进制内容 {mime}，约 {} KB]", blob.len() * 3 / 4 / 1024));
+        }
+    }
+    let text = parts.join("\n\n");
+    if text.chars().count() > max_chars {
+        text.chars().take(max_chars).collect::<String>() + "\n…（内容过长，已截断）"
+    } else {
+        text
+    }
+}
+
+/// prompts/get 的结果 → 填进输入框的文本（只取文字内容）
+pub fn prompt_text(result: &Value) -> String {
+    result
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let content = m.get("content")?;
+            match content.get("type").and_then(Value::as_str) {
+                Some("text") => content.get("text").and_then(Value::as_str).map(str::to_string),
+                Some("resource") => content.pointer("/resource/text").and_then(Value::as_str).map(str::to_string),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// 定时断开空闲连接
 pub fn spawn_reaper() {
     tokio::spawn(async {
@@ -249,7 +330,8 @@ pub struct McpTool {
 }
 
 impl McpTool {
-    pub fn new(server: &McpServer, info: ToolInfo) -> Self {
+    pub fn new(server: &McpServer, mut info: ToolInfo) -> Self {
+        info.read_only |= server.config.assume_read_only;
         let label = info.title.clone().unwrap_or_else(|| info.name.clone());
         let mut description = format!("【插件：{}】{}", server.name, info.description.trim());
         if description.chars().count() > 1000 {
@@ -287,6 +369,19 @@ impl OfficeTool for McpTool {
     }
     fn parallel_safe(&self) -> bool {
         self.info.read_only
+    }
+    fn approval(&self, _input: &Value) -> Option<crate::agent::approval::ApprovalSpec> {
+        let needed = match self.server.config.approval.as_str() {
+            "never" => false,
+            "always" => true,
+            _ => !self.info.read_only,
+        };
+        needed.then(|| crate::agent::approval::ApprovalSpec {
+            source: self.server.name.clone(),
+            label: self.info.title.clone().unwrap_or_else(|| self.info.name.clone()),
+            reason: if self.info.read_only { "这个插件设置为每次调用都需要确认".into() } else { "可能修改外部数据".into() },
+            read_only: self.info.read_only,
+        })
     }
     async fn call(&self, input: Value, _ctx: &ToolContext) -> ToolResult {
         let label = self.info.title.clone().unwrap_or_else(|| self.info.name.clone());
@@ -355,6 +450,20 @@ mod tests {
         let err = render_result("s", "t", &json!({ "isError": true, "content": [{ "type": "text", "text": "城市不存在" }] }));
         assert!(!err.success);
         assert!(err.error.unwrap().contains("城市不存在"));
+    }
+
+    #[test]
+    fn resource_and_prompt_text() {
+        let r = json!({ "contents": [{ "uri": "a", "text": "纪要内容" }, { "uri": "b", "blob": "QUFBQQ==".repeat(1000), "mimeType": "image/png" }] });
+        let text = resource_text(&r, 100);
+        assert!(text.starts_with("纪要内容\n\n[二进制内容 image/png"));
+        assert!(resource_text(&json!({ "contents": [{ "text": "字".repeat(50) }] }), 10).ends_with("已截断）"));
+        let p = json!({ "messages": [
+            { "role": "user", "content": { "type": "text", "text": "写一份周报" } },
+            { "role": "assistant", "content": { "type": "image", "data": "x" } },
+            { "role": "user", "content": { "type": "resource", "resource": { "uri": "x", "text": "参考资料" } } }
+        ] });
+        assert_eq!(prompt_text(&p), "写一份周报\n\n参考资料");
     }
 
     #[test]

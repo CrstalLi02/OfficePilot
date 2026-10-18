@@ -142,6 +142,7 @@ const OFFICE_AGENT_PROMPT: &str = r#"你是 WaLiOffice 的智能办公 Agent，�
 7. 用户说"刚才那张图""上面的文档""第三页"时，结合对话历史和已有产物理解指代。
 8. 用户上传图片并问"这是什么、提取文字、分析截图"时，直接结合图片回答，不要调用生成工具。
 9. 不要在文本中模拟工具调用或编造工具结果。
+10. 用户要求执行一个操作（创建、提交、发送、修改外部系统里的数据）时，每次都必须实际调用对应的工具。对话历史里只有之前的文字回复、不包含工具调用，历史上的“已创建 / 已发送”不代表这次已经执行；没有调用工具就绝不能声称已完成，也不能编造编号或结果。
 
 ## 交付质量
 - 产物要接近可直接使用：完整的章节与论证、真实可用的字段和数据、清晰的叙事，不要只给提纲或占位符。
@@ -680,7 +681,14 @@ async fn run_one(
                 .join(", ");
             ToolResult::err(format!("工具 \"{}\" 不可用（不存在，或当前模式 / 范围不开放）。可用工具: {available}", call.name))
         }
-        Some(tool) => {
+        Some(tool) => 'run: {
+            // 需要确认的工具先等用户处理（不计入工具超时）
+            if let Some(spec) = tool.approval(&call.input) {
+                let outcome = super::approval::request(&ctx.for_call(&call.call_id), &call.call_id, &call.name, &spec, &call.input, cancel).await;
+                if let super::approval::Outcome::Denied(reason) = outcome {
+                    break 'run ToolResult::err(reason);
+                }
+            }
             let call_ctx = ctx.for_call(&call.call_id);
             let input = call.input.clone();
             let mut handle = tokio::spawn(async move { tool.call(input, &call_ctx).await });

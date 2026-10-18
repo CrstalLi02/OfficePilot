@@ -29,6 +29,10 @@ pub struct ToolContext {
     pub timezone: Option<String>,
     /// 从 IM 会话发起时的会话位置（例如在飞书里创建的定时任务结果推回这个会话）
     pub im_target: Option<crate::im::ImTarget>,
+    /// 运行来源：chat / schedule / im（工具确认据此决定能否等人处理）
+    pub origin: Option<String>,
+    /// 当前有几个网页在看这次运行（没人看时需要确认的操作会发通知）
+    pub watchers: Option<Arc<dyn Fn() -> usize + Send + Sync>>,
 }
 
 impl ToolContext {
@@ -53,7 +57,19 @@ impl ToolContext {
             call_id: None,
             timezone: None,
             im_target: None,
+            origin: None,
+            watchers: None,
         }
+    }
+
+    pub fn with_origin(mut self, origin: &str) -> Self {
+        self.origin = Some(origin.to_string());
+        self
+    }
+
+    pub fn with_watchers(mut self, watchers: impl Fn() -> usize + Send + Sync + 'static) -> Self {
+        self.watchers = Some(Arc::new(watchers));
+        self
     }
 
     pub fn with_im_target(mut self, target: Option<crate::im::ImTarget>) -> Self {
@@ -205,6 +221,10 @@ pub trait OfficeTool: Send + Sync {
     /// 调度时作为屏障单独串行执行
     fn parallel_safe(&self) -> bool {
         true
+    }
+    /// 执行前是否需要用户确认（插件的写操作等）；返回 None 表示直接执行
+    fn approval(&self, _input: &serde_json::Value) -> Option<super::approval::ApprovalSpec> {
+        None
     }
 
     async fn call(&self, input: serde_json::Value, ctx: &ToolContext) -> ToolResult;

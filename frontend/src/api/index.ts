@@ -349,6 +349,12 @@ export interface McpServer {
   args: string[];
   description: string;
   disabled_tools: string[];
+  /** 调用前确认：writes 写操作需要确认 / always 每次都确认 / never 无需确认 */
+  approval: 'writes' | 'always' | 'never';
+  /** 所有工具都只读取数据 */
+  assume_read_only: boolean;
+  catalog_id?: string | null;
+  query_names: string[];
   header_names: string[];
   env_names: string[];
   secrets_broken: boolean;
@@ -370,6 +376,8 @@ export interface McpServerInput {
   headers?: Array<{ name: string; value: string }>;
   env?: Array<{ name: string; value: string }>;
   enabled?: boolean;
+  approval?: McpServer['approval'];
+  assume_read_only?: boolean;
 }
 
 export interface McpTool {
@@ -393,7 +401,50 @@ export const mcpApi = {
   tools: (id: string) => api.get<McpToolsResult>(`/mcp/servers/${id}/tools`),
   setDisabledTools: (id: string, disabled: string[]) => api.put<McpServer>(`/mcp/servers/${id}/tools`, { disabled }),
   importConfig: (config: string) => api.post<{ created: McpServer[]; errors: string[] }>('/mcp/import', { config }),
+  /** 所有已启用插件的资源（@ 菜单） */
+  resources: () => api.get<{ resources: McpResource[]; errors: string[] }>('/mcp/resources'),
+  /** 所有已启用插件的提示词（/ 菜单） */
+  prompts: () => api.get<{ prompts: McpPrompt[]; errors: string[] }>('/mcp/prompts'),
+  catalog: () => api.get<{ entries: McpCatalogEntry[] }>('/mcp/catalog'),
+  install: (id: string, fields: Record<string, string>) => api.post<McpServer>(`/mcp/catalog/${id}/install`, { fields }),
+  getPrompt: (serverId: string, name: string, args: Record<string, string>) =>
+    api.post<{ text: string }>(`/mcp/servers/${serverId}/prompts/get`, { name, arguments: args }),
 };
+
+export interface McpCatalogEntry {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  description: string;
+  docs: string;
+  transport: McpServer['transport'];
+  url?: string | null;
+  command?: string | null;
+  args: string[];
+  fields: Array<{ key: string; label: string; help: string; required: boolean; secret: boolean }>;
+  available: boolean;
+  installed: boolean;
+}
+
+export interface McpResource {
+  server_id: string;
+  server_name: string;
+  uri: string;
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  mime_type?: string | null;
+}
+
+export interface McpPrompt {
+  server_id: string;
+  server_name: string;
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  arguments: Array<{ name: string; description?: string; required?: boolean }>;
+}
 
 // ===== 后台任务 API =====
 export interface AgentTask {
@@ -415,6 +466,9 @@ export const tasksApi = {
   list: () => api.get<{ tasks: AgentTask[] }>('/tasks'),
   cancel: (taskId: string) => api.post<{ cancelled: boolean }>(`/tasks/${taskId}/cancel`),
   retry: (taskId: string) => api.post<{ task_id: string; session_id: string }>(`/tasks/${taskId}/retry`),
+  /** 处理工具调用前的确认；remember 表示本次对话里这个工具都允许 */
+  approve: (approvalId: string, decision: 'approve' | 'reject', remember = false) =>
+    api.post<{ ok: boolean }>(`/approvals/${approvalId}`, { decision, remember }),
 };
 
 // ===== 对话 API (SSE) =====
@@ -442,7 +496,13 @@ export const chatApi = {
     token: string,
     signal?: AbortSignal,
     toolConfig?: Record<string, any>,
-    options?: { mode?: AgentMode; resume?: PlanDecisionPayload; fileRefs?: string[]; skills?: string[] }
+    options?: {
+      mode?: AgentMode;
+      resume?: PlanDecisionPayload;
+      fileRefs?: string[];
+      skills?: string[];
+      mcpResources?: Array<{ server_id: string; uri: string; name: string }>;
+    }
   ) => {
     const response = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
@@ -463,6 +523,7 @@ export const chatApi = {
         resume: options?.resume,
         file_refs: options?.fileRefs?.length ? options.fileRefs : undefined,
         skills: options?.skills?.length ? options.skills : undefined,
+        mcp_resources: options?.mcpResources?.length ? options.mcpResources : undefined,
         timezone: browserTimezone(),
       }),
       signal,

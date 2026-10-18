@@ -21,6 +21,28 @@ pub fn router() -> Router {
         .route("/api/tasks/:task_id/stream", get(stream))
         .route("/api/tasks/:task_id/cancel", post(cancel))
         .route("/api/tasks/:task_id/retry", post(retry))
+        .route("/api/approvals/:approval_id", post(approve))
+}
+
+#[derive(Deserialize)]
+struct ApprovalInput {
+    /// approve / reject
+    decision: String,
+    /// 本次对话里这个工具都允许
+    #[serde(default)]
+    remember: bool,
+}
+
+/// 处理工具调用前的确认
+async fn approve(user: AuthUser, Path(approval_id): Path<String>, Json(input): Json<ApprovalInput>) -> Result<Json<Value>, AppError> {
+    use crate::agent::approval::{resolve, Decision};
+    let decision = match input.decision.as_str() {
+        "approve" => Decision::Approve,
+        "reject" => Decision::Reject,
+        _ => return Err(AppError::BadRequest("decision 只能是 approve 或 reject".into())),
+    };
+    resolve(&approval_id, &user.0.id, decision, input.remember).map_err(AppError::BadRequest)?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn list(user: AuthUser) -> Result<Json<Value>, AppError> {

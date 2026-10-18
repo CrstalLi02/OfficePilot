@@ -1,0 +1,111 @@
+[
+  {
+    "id": "deepwiki",
+    "name": "DeepWiki",
+    "slug": "deepwiki",
+    "category": "开发",
+    "description": "查询 GitHub 公开仓库的文档与结构，回答关于某个开源项目的问题。免费、无需登录。",
+    "docs": "https://docs.devin.ai/work-with-devin/deepwiki-mcp",
+    "transport": "http",
+    "url": "https://mcp.deepwiki.com/mcp",
+    "fields": [],
+    "read_only": true
+  },
+  {
+    "id": "context7",
+    "name": "Context7",
+    "slug": "context7",
+    "category": "开发",
+    "description": "获取编程库、框架的最新官方文档和代码示例，避免模型用过时的 API。",
+    "docs": "https://github.com/upstash/context7",
+    "transport": "http",
+    "url": "https://mcp.context7.com/mcp",
+    "headers": {
+      "Authorization": "Bearer {CONTEXT7_API_KEY}"
+    },
+    "fields": [
+      {
+        "key": "CONTEXT7_API_KEY",
+        "label": "API Key（可选）",
+        "help": "在 context7.com/dashboard 免费申请，填写后调用额度更高",
+        "required": false,
+        "secret": true
+      }
+    ],
+    "read_only": true
+  },
+  {
+    "id": "amap",
+    "name": "高德地图",
+    "slug": "amap",
+    "category": "地图出行",
+    "description": "地理编码、天气查询、驾车 / 公交 / 步行 / 骑行路线规划、周边与关键词搜索、距离测量等。",
+    "docs": "https://lbs.amap.com/api/mcp-server/gettingstarted",
+    "transport": "http",
+    "url": "https://mcp.amap.com/mcp",
+    "query": {
+      "key": "{AMAP_KEY}"
+    },
+    "fields": [
+      {
+        "key": "AMAP_KEY",
+        "label": "高德 Key",
+        "help": "在高德开放平台控制台创建应用，添加 Web 服务类型的 Key",
+        "required": true,
+        "secret": true
+      }
+    ]
+  },
+  {
+    "id": "github",
+    "name": "GitHub",
+    "slug": "github",
+    "category": "开发",
+    "description": "读写 GitHub 仓库、Issue、Pull Request 等。写操作默认需要确认；只想查询可以在地址后加 readonly。",
+    "docs": "https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md",
+    "transport": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+      "Authorization": "Bearer {GITHUB_PAT}"
+    },
+    "fields": [
+      {
+        "key": "GITHUB_PAT",
+        "label": "个人访问令牌（PAT）",
+        "help": "GitHub → Settings → Developer settings 创建，建议授予 repo、read:packages、read:org",
+        "required": true,
+        "secret": true
+      }
+    ]
+  },
+  {
+    "id": "fetch",
+    "name": "网页抓取（Fetch）",
+    "slug": "fetch",
+    "category": "本地命令",
+    "description": "抓取指定网址的内容并转成 Markdown（官方参考实现，默认不访问内网地址）。需要服务器安装 uv。",
+    "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+    "transport": "stdio",
+    "command": "uvx",
+    "args": [
+      "mcp-server-fetch"
+    ],
+    "fields": [],
+    "read_only": true
+  },
+  {
+    "id": "time",
+    "name": "时间与时区（Time）",
+    "slug": "time",
+    "category": "本地命令",
+    "description": "查询各时区的当前时间、在时区之间换算（官方参考实现）。需要服务器安装 uv。",
+    "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+    "transport": "stdio",
+    "command": "uvx",
+    "args": [
+      "mcp-server-time"
+    ],
+    "fields": [],
+    "read_only": true
+  }
+]

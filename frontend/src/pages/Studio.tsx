@@ -3,7 +3,7 @@ import type React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePPTStore } from '@/stores/ppt-store'
-import { artifactApi, tasksApi, chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi } from '@/api'
+import { artifactApi, tasksApi, chatApi, docApi, excelApi, pptApi, sessionApi, projectApi, settingsApi, fileApi, type McpResource } from '@/api'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { ConversationTabs } from '@/components/chat/ConversationTabs'
 import { SlidePreview } from '@/components/preview/SlidePreview'
@@ -1065,6 +1065,27 @@ export default function Studio() {
     )
   }
 
+  /** @ 引用插件资源：发送时由服务端读取内容交给 Agent */
+  const handleInsertResourceRef = (resource: McpResource) => {
+    if (isStreaming) return
+    const name = resource.title || resource.name || resource.uri
+    setInputRefs((current) =>
+      current.some((ref) => ref.mcpResource?.uri === resource.uri && ref.mcpResource?.server_id === resource.server_id)
+        ? current
+        : [
+            ...current,
+            {
+              id: `mcp-${resource.server_id}-${resource.uri}`,
+              artifactId: '',
+              kind: 'mixed',
+              title: name,
+              refText: `[插件资源：${name}]`,
+              mcpResource: { server_id: resource.server_id, uri: resource.uri, name },
+            },
+          ]
+    )
+  }
+
   const handleInsertArtifactToInput = (artifact: Artifact, fromSessionId?: string) => {
     if (isStreaming) return
 
@@ -1586,6 +1607,7 @@ export default function Studio() {
       : baseMessage
     const pendingAttachments = override ? [] : attachments
     const fileRefs = override ? [] : inputRefs.flatMap((ref) => (ref.fileId ? [ref.fileId] : []))
+    const mcpResources = override ? [] : inputRefs.flatMap((ref) => (ref.mcpResource ? [ref.mcpResource] : []))
     const skills = override ? [] : selectedSkills
     if (!override) setSelectedSkills([])
     const inferredTool = override ? activeTool : inferToolFromMessage(message, pendingAttachments)
@@ -1664,7 +1686,7 @@ export default function Studio() {
         token,
         abortController.signal,
         toolConfig,
-        { mode: agentMode, resume: override?.resume, fileRefs, skills }
+        { mode: agentMode, resume: override?.resume, fileRefs, skills, mcpResources }
       )
     } catch (err) {
       console.error('Chat error:', err)
@@ -2225,6 +2247,7 @@ export default function Studio() {
                 onExportArtifact={handleExportArtifact}
                 onInsertArtifact={handleInsertArtifactToInput}
                 onInsertFileRef={handleInsertFileRef}
+                onInsertResourceRef={handleInsertResourceRef}
                 selectedSkills={selectedSkills}
                 onAddSkill={(skill: SkillSummary) => setSelectedSkills((current) => (current.includes(skill.name) ? current : [...current, skill.name]))}
                 onRemoveSkill={(name) => setSelectedSkills((current) => current.filter((n) => n !== name))}

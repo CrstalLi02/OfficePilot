@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { FileEdit, Sheet, PenTool, Image as ImageIcon, Clapperboard, FileText, Search, Clock, MessageSquare, FolderOpen, Loader2 } from 'lucide-react'
-import { fileApi } from '@/api'
+import { FileEdit, Sheet, PenTool, Image as ImageIcon, Clapperboard, FileText, Search, Clock, MessageSquare, FolderOpen, Loader2, Puzzle } from 'lucide-react'
+import { fileApi, mcpApi, type McpResource } from '@/api'
 import type { Artifact, WorkspaceFile } from '@/types'
 
 export interface FilePickerProps {
@@ -12,6 +12,8 @@ export interface FilePickerProps {
   onSelect: (artifact: Artifact, sessionId?: string) => void
   /** 选择工作区文件回调；不传则不显示"文件"标签 */
   onSelectFile?: (file: WorkspaceFile) => void
+  /** 引用插件资源 */
+  onSelectResource?: (resource: McpResource) => void
   onClose: () => void
 }
 
@@ -59,7 +61,7 @@ const FILE_TYPE: Record<string, { icon: typeof FileEdit; label: string }> = {
   video: { icon: Clapperboard, label: '视频' },
 }
 
-type PickerTab = 'current' | 'history' | 'files'
+type PickerTab = 'current' | 'history' | 'files' | 'plugins'
 
 interface PickerItem {
   key: string
@@ -79,7 +81,7 @@ function matches(query: string, ...fields: Array<string | undefined>) {
   return !q || fields.some((f) => f?.toLowerCase().includes(q))
 }
 
-export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelectFile, onClose }: FilePickerProps) {
+export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelectFile, onSelectResource, onClose }: FilePickerProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<PickerTab>('current')
@@ -103,13 +105,29 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelec
     }
   }, [wantsFiles])
 
+  // 插件资源按需加载；没有资源时不显示这个标签
+  const [resources, setResources] = useState<McpResource[] | null>(onSelectResource ? null : [])
+  const wantsResources = Boolean(onSelectResource)
+  useEffect(() => {
+    if (!wantsResources) return
+    let cancelled = false
+    mcpApi
+      .resources()
+      .then(({ data }) => !cancelled && setResources(data.resources))
+      .catch(() => !cancelled && setResources([]))
+    return () => {
+      cancelled = true
+    }
+  }, [wantsResources])
+
   const tabs = useMemo(() => {
     const list: Array<{ id: PickerTab; label: string; icon: typeof FileEdit; count: number | null }> = []
     if (artifacts.length > 0) list.push({ id: 'current', label: '当前会话', icon: MessageSquare, count: artifacts.length })
     if (history.length > 0) list.push({ id: 'history', label: '历史会话', icon: Clock, count: history.length })
     if (onSelectFile) list.push({ id: 'files', label: '文件', icon: FolderOpen, count: files ? files.length : null })
+    if (resources && resources.length > 0) list.push({ id: 'plugins', label: '插件资源', icon: Puzzle, count: resources.length })
     return list
-  }, [artifacts.length, history.length, onSelectFile, files])
+  }, [artifacts.length, history.length, onSelectFile, files, resources])
 
   // 当前标签没有内容时切到第一个有内容的标签
   useEffect(() => {
@@ -139,6 +157,19 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelec
       }
       return Object.keys(bySession).sort().map((name) => ({ name, items: bySession[name] }))
     }
+    if (activeTab === 'plugins') {
+      const byServer: Record<string, PickerItem[]> = {}
+      for (const r of (resources || []).filter((r) => matches(query, r.title || undefined, r.name, r.uri, r.server_name))) {
+        ;(byServer[r.server_name] ||= []).push({
+          key: `${r.server_id}:${r.uri}`,
+          title: r.title || r.name || r.uri,
+          label: r.mime_type?.startsWith('image/') ? '图片' : '资源',
+          icon: r.mime_type?.startsWith('image/') ? ImageIcon : Puzzle,
+          pick: () => onSelectResource?.(r),
+        })
+      }
+      return Object.keys(byServer).sort().map((name) => ({ name, items: byServer[name] }))
+    }
     const items = (files || [])
       .filter((f) => matches(query, f.name))
       .slice(0, 100)
@@ -147,7 +178,7 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelec
         return { key: f.id, title: f.name, label: meta.label, icon: meta.icon, pick: () => onSelectFile?.(f) }
       })
     return items.length ? [{ name: '最近修改', items }] : []
-  }, [activeTab, artifacts, history, files, query, onSelect, onSelectFile])
+  }, [activeTab, artifacts, history, files, resources, query, onSelect, onSelectFile, onSelectResource])
 
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups])
 
@@ -212,7 +243,7 @@ export function FilePickerPanel({ artifacts, historyArtifacts, onSelect, onSelec
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={activeTab === 'files' ? '搜索文件…' : '搜索产物…'}
+            placeholder={activeTab === 'files' ? '搜索文件…' : activeTab === 'plugins' ? '搜索插件资源…' : '搜索产物…'}
             className="w-full border-0 bg-transparent p-0 text-xs text-surface-800 outline-none placeholder:text-surface-300"
           />
           <span className="shrink-0 rounded bg-surface-50 px-1.5 py-0.5 text-[10px] font-medium text-surface-400">ESC 关闭</span>
