@@ -14,12 +14,14 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{Channel, Incoming};
+use super::{Channel, Incoming, Resource};
 
 /// 单个文件上限（飞书限制 30MB）
 const MAX_FILE_BYTES: usize = 30 * 1024 * 1024;
 /// 图片上限（飞书限制 10MB）
 const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+/// 从 IM 下载的单个文件上限
+pub const MAX_DOWNLOAD_BYTES: usize = 20 * 1024 * 1024;
 
 pub fn api_base(domain: &str) -> String {
     if let Ok(base) = std::env::var("FEISHU_API_BASE") {
@@ -130,6 +132,48 @@ impl Client {
         ))
     }
 
+    /// 群名（需要 im:chat:readonly 权限，拿不到时返回 None）
+    pub async fn chat_name(&self, chat_id: &str) -> Option<String> {
+        let resp = self.call(reqwest::Method::GET, &format!("/open-apis/im/v1/chats/{chat_id}"), None, "获取群信息").await.ok()?;
+        resp.pointer("/data/name").and_then(Value::as_str).filter(|n| !n.is_empty()).map(str::to_string)
+    }
+
+    /// 下载消息里的图片 / 文件，返回 (字节, MIME)
+    pub async fn download(&self, message_id: &str, key: &str, kind: &str) -> Result<(Vec<u8>, String)> {
+        let token = self.token().await?;
+        let resp = http()
+            .get(format!("{}/open-apis/im/v1/messages/{message_id}/resources/{key}?type={kind}", self.base))
+            .bearer_auth(token)
+            .send()
+            .await
+            .context("下载失败：连接飞书失败")?;
+        let mime = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if !resp.status().is_success() || mime == "application/json" {
+            let forbidden = resp.status() == reqwest::StatusCode::FORBIDDEN;
+            let body: Value = resp.json().await.unwrap_or_default();
+            let msg = body.get("msg").and_then(Value::as_str).unwrap_or("未知错误");
+            let hint = if forbidden { "（需要 im:resource 权限）" } else { "" };
+            bail!("下载失败：{msg}{hint}");
+        }
+        if resp.content_length().is_some_and(|n| n as usize > MAX_DOWNLOAD_BYTES) {
+            bail!("文件超过 {}MB", MAX_DOWNLOAD_BYTES / 1024 / 1024);
+        }
+        let bytes = resp.bytes().await.context("下载中断")?;
+        if bytes.len() > MAX_DOWNLOAD_BYTES {
+            bail!("文件超过 {}MB", MAX_DOWNLOAD_BYTES / 1024 / 1024);
+        }
+        Ok((bytes.to_vec(), mime))
+    }
+
     /// 回复某条消息，返回新消息的 message_id
     pub async fn reply(&self, message_id: &str, msg_type: &str, content: &Value) -> Result<String> {
         let resp = self
@@ -143,8 +187,7 @@ impl Client {
         Ok(resp.pointer("/data/message_id").and_then(Value::as_str).unwrap_or_default().to_string())
     }
 
-    /// 主动发到某个会话（chat_id）；C2-b 的定时任务结果推送会用到
-    #[allow(dead_code)]
+    /// 主动发到某个会话（chat_id），用于定时任务结果推送
     pub async fn send(&self, chat_id: &str, msg_type: &str, content: &Value) -> Result<String> {
         let resp = self
             .call(
@@ -280,11 +323,19 @@ pub fn parse_message_event(event: &Value, bot_open_id: Option<&str>) -> Option<I
         // 不知道机器人 open_id 时：没有“接收群聊所有消息”权限的应用只会收到 @ 它的群消息
         _ => true,
     });
-    let (text, unsupported) = match msg_type {
-        "text" => (content.get("text").and_then(Value::as_str).unwrap_or_default().to_string(), None),
-        "post" => (post_text(&content), None),
-        other => (String::new(), Some(other.to_string())),
+    let key = |field: &str| content.get(field).and_then(Value::as_str).unwrap_or_default().to_string();
+    let (text, resources, unsupported) = match msg_type {
+        "text" => (key("text"), vec![], None),
+        "post" => (post_text(&content), post_images(&content), None),
+        "image" => (String::new(), vec![Resource { key: key("image_key"), kind: "image".into(), name: None }], None),
+        "file" => (
+            String::new(),
+            vec![Resource { key: key("file_key"), kind: "file".into(), name: content.get("file_name").and_then(Value::as_str).map(str::to_string) }],
+            None,
+        ),
+        other => (String::new(), vec![], Some(other.to_string())),
     };
+    let resources: Vec<Resource> = resources.into_iter().filter(|r| !r.key.is_empty()).collect();
     // 去掉 @ 占位（@_user_1），只保留正文
     let mut text = text;
     for m in &mentions {
@@ -301,8 +352,61 @@ pub fn parse_message_event(event: &Value, bot_open_id: Option<&str>) -> Option<I
         sender_name: None,
         text: text.trim().to_string(),
         mentioned_bot,
+        resources,
         unsupported,
     })
+}
+
+/// 富文本里的图片
+fn post_images(content: &Value) -> Vec<Resource> {
+    let body = content
+        .get("content")
+        .or_else(|| content.as_object().and_then(|o| o.values().find_map(|v| v.get("content"))))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    body.iter()
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter(|item| item.get("tag").and_then(Value::as_str) == Some("img"))
+        .filter_map(|item| item.get("image_key").and_then(Value::as_str))
+        .map(|k| Resource { key: k.to_string(), kind: "image".into(), name: None })
+        .collect()
+}
+
+pub fn event_type(event: &Value) -> &str {
+    event.pointer("/header/event_type").and_then(Value::as_str).unwrap_or_default()
+}
+
+/// 卡片按钮回调（card.action.trigger）
+#[derive(Debug, Clone)]
+pub struct CardAction {
+    pub event_key: String,
+    pub operator_id: String,
+    pub chat_id: String,
+    pub message_id: String,
+    pub value: Value,
+}
+
+pub fn parse_card_action(event: &Value) -> Option<CardAction> {
+    if event_type(event) != "card.action.trigger" {
+        return None;
+    }
+    let body = event.get("event")?;
+    let text = |ptr: &str| body.pointer(ptr).and_then(Value::as_str).unwrap_or_default().to_string();
+    let message_id = text("/context/open_message_id");
+    Some(CardAction {
+        event_key: event.pointer("/header/event_id").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("card:{message_id}")),
+        operator_id: text("/operator/open_id"),
+        chat_id: text("/context/open_chat_id"),
+        message_id,
+        value: body.pointer("/action/value").cloned().unwrap_or_default(),
+    })
+}
+
+/// 卡片回调的即时响应：弹出提示（处理在后台进行）
+pub fn card_toast(content: &str) -> Value {
+    json!({ "toast": { "type": "info", "content": content } })
 }
 
 /// 富文本（post）消息取出纯文本
@@ -349,6 +453,20 @@ pub enum Tone {
 
 /// 生成一张消息卡片：标题、Markdown 正文、底部备注、可选的链接按钮
 pub fn card(title: &str, tone: Tone, body: &str, note: Option<&str>, link: Option<(&str, &str)>) -> Value {
+    card_with_buttons(title, tone, body, note, link, vec![])
+}
+
+/// 回调按钮：点击后飞书推送 card.action.trigger，value 原样带回
+pub fn callback_button(label: &str, primary: bool, value: Value) -> Value {
+    json!({
+        "tag": "button",
+        "text": { "tag": "plain_text", "content": label },
+        "type": if primary { "primary" } else { "default" },
+        "value": value,
+    })
+}
+
+pub fn card_with_buttons(title: &str, tone: Tone, body: &str, note: Option<&str>, link: Option<(&str, &str)>, buttons: Vec<Value>) -> Value {
     let template = match tone {
         Tone::Running => "blue",
         Tone::Success => "green",
@@ -357,11 +475,12 @@ pub fn card(title: &str, tone: Tone, body: &str, note: Option<&str>, link: Optio
         Tone::Neutral => "grey",
     };
     let mut elements = vec![json!({ "tag": "markdown", "content": truncate(body, 6000) })];
+    let mut actions = buttons;
     if let Some((label, url)) = link {
-        elements.push(json!({
-            "tag": "action",
-            "actions": [{ "tag": "button", "text": { "tag": "plain_text", "content": label }, "type": "default", "url": url }]
-        }));
+        actions.push(json!({ "tag": "button", "text": { "tag": "plain_text", "content": label }, "type": "default", "url": url }));
+    }
+    if !actions.is_empty() {
+        elements.push(json!({ "tag": "action", "actions": actions }));
     }
     if let Some(note) = note.filter(|n| !n.is_empty()) {
         elements.push(json!({ "tag": "note", "elements": [{ "tag": "plain_text", "content": truncate(note, 300) }] }));
@@ -371,6 +490,25 @@ pub fn card(title: &str, tone: Tone, body: &str, note: Option<&str>, link: Optio
         "header": { "title": { "tag": "plain_text", "content": truncate(title, 60) }, "template": template },
         "elements": elements,
     })
+}
+
+/// 飞书卡片的 Markdown 不支持表格：把表格行改成「单元格 | 单元格」的纯文本，去掉分隔行
+pub fn flatten_tables(markdown: &str) -> String {
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let t = line.trim();
+            if !(t.starts_with('|') && t.ends_with('|') && t.len() > 1) {
+                return Some(line.to_string());
+            }
+            if t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' ')) {
+                return None;
+            }
+            let cells: Vec<&str> = t[1..t.len() - 1].split('|').map(str::trim).collect();
+            Some(cells.join(" ｜ "))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn truncate(text: &str, max: usize) -> String {
@@ -447,11 +585,47 @@ mod tests {
         let post = json!({ "title": "需求", "content": [[{ "tag": "text", "text": "做一份" }, { "tag": "text", "text": "PPT" }]] });
         assert_eq!(parse_message_event(&event("post", post), None).unwrap().text, "需求\n做一份PPT");
         let image = parse_message_event(&event("image", json!({ "image_key": "k" })), None).unwrap();
-        assert_eq!(image.unsupported.as_deref(), Some("image"));
+        assert_eq!(image.resources, vec![Resource { key: "k".into(), kind: "image".into(), name: None }]);
+        assert!(image.unsupported.is_none());
+        let file = parse_message_event(&event("file", json!({ "file_key": "f", "file_name": "销售.xlsx" })), None).unwrap();
+        assert_eq!(file.resources[0].name.as_deref(), Some("销售.xlsx"));
+        let post = json!({ "content": [[{ "tag": "text", "text": "看图" }, { "tag": "img", "image_key": "i1" }]] });
+        let post = parse_message_event(&event("post", post), None).unwrap();
+        assert_eq!((post.text.as_str(), post.resources.len()), ("看图", 1));
+        let audio = parse_message_event(&event("audio", json!({ "file_key": "a" })), None).unwrap();
+        assert_eq!(audio.unsupported.as_deref(), Some("audio"));
         // 机器人自己发的消息忽略
         let mut bot = event("text", json!({ "text": "hi" }));
         bot["event"]["sender"]["sender_type"] = json!("app");
         assert!(parse_message_event(&bot, None).is_none());
+    }
+
+    #[test]
+    fn parses_card_action() {
+        let event = json!({
+            "schema": "2.0",
+            "header": { "event_id": "ce1", "event_type": "card.action.trigger" },
+            "event": {
+                "operator": { "open_id": "ou_user" },
+                "action": { "tag": "button", "value": { "kind": "plan", "decision": "approve", "run_id": "r1" } },
+                "context": { "open_message_id": "om_card", "open_chat_id": "oc_1" }
+            }
+        });
+        let action = parse_card_action(&event).unwrap();
+        assert_eq!((action.operator_id.as_str(), action.chat_id.as_str(), action.message_id.as_str()), ("ou_user", "oc_1", "om_card"));
+        assert_eq!(action.value["run_id"], "r1");
+        assert!(parse_message_event(&event, None).is_none());
+        let card = card_with_buttons("t", Tone::Warning, "b", None, Some(("打开", "http://x")), vec![callback_button("确认", true, json!({ "a": 1 }))]);
+        let actions = card["elements"][1]["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0]["value"]["a"], 1);
+        assert_eq!(actions[1]["url"], "http://x");
+    }
+
+    #[test]
+    fn flattens_markdown_tables() {
+        let md = "汇总：\n\n| 区域 | 销售额 |\n|---|:---:|\n| 华东 | 440 |\n\n结论 | 不是表格";
+        assert_eq!(flatten_tables(md), "汇总：\n\n区域 ｜ 销售额\n华东 ｜ 440\n\n结论 | 不是表格");
     }
 
     #[test]

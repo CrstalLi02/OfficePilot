@@ -20,12 +20,18 @@ pub fn router() -> Router {
         .route("/api/im/channels/:id/bind-code", post(bind_code))
         .route("/api/im/channels/:id/bindings", get(bindings))
         .route("/api/im/channels/:id/bindings/:binding_id", delete(unbind))
+        .route("/api/im/targets", get(targets))
         .route("/api/im/feishu/:id/event", post(feishu_event))
 }
 
 async fn list(user: AuthUser) -> Result<Json<Value>, AppError> {
     let channels = im::list_channels(&state::db_pool(), &user.0.id).await?;
     Ok(Json(json!({ "channels": channels.iter().map(|c| c.public_json()).collect::<Vec<_>>() })))
+}
+
+/// 可选的推送目标（定时任务结果推送到哪个飞书会话）
+async fn targets(user: AuthUser) -> Result<Json<Value>, AppError> {
+    Ok(Json(json!({ "targets": im::targets(&state::db_pool(), &user.0.id).await? })))
 }
 
 async fn create(user: AuthUser, Json(input): Json<ChannelInput>) -> Result<Json<Value>, AppError> {
@@ -125,7 +131,8 @@ async fn feishu_event(Path(id): Path<String>, headers: HeaderMap, body: Bytes) -
     if event.get("type").and_then(Value::as_str) == Some("url_verification") {
         return Ok(Json(json!({ "challenge": event.get("challenge").cloned().unwrap_or_default() })));
     }
-    // 3 秒内必须应答，处理放到后台
+    // 3 秒内必须应答，处理放到后台；卡片回调回一个提示
+    let reply = if feishu::event_type(&event) == "card.action.trigger" { feishu::card_toast("已收到，正在处理") } else { json!({ "code": 0 }) };
     tokio::spawn(im::router::handle_event(channel.id.clone(), event));
-    Ok(Json(json!({ "code": 0 })))
+    Ok(Json(reply))
 }

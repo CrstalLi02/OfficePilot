@@ -151,6 +151,9 @@ pub struct ChatRequest {
     /// 对 Plan 模式下待确认计划的决定；带上它表示恢复那次运行
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<crate::agent::plan::PlanDecision>,
+    /// 从 IM 发起时的会话位置（只在服务端内部设置，不接受客户端传入）
+    #[serde(skip)]
+    pub im_target: Option<crate::im::ImTarget>,
 }
 
 // ── Slide / PPT ──

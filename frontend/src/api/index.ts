@@ -32,8 +32,6 @@ api.interceptors.response.use(
 export const authApi = {
   login: (username: string, password: string) =>
     api.post<TokenResponse>('/auth/login', { username, password }),
-  verificationLogin: (code: string) =>
-    api.post<TokenResponse>('/auth/verification-login', { code }),
   register: (username: string, email: string, password: string) =>
     api.post<TokenResponse>('/auth/register', { username, email, password }),
   getMe: () => api.get('/auth/me'),
@@ -254,6 +252,13 @@ export interface Schedule {
   last_run_at?: string | null;
   last_task_id?: string | null;
   created_at: string;
+  /** 运行结果推送到的 IM 会话 */
+  notify?: (ImTarget & { label: string }) | null;
+}
+
+export interface ImTarget {
+  channel_id: string;
+  chat_id: string;
 }
 
 export interface ScheduleInput {
@@ -265,6 +270,8 @@ export interface ScheduleInput {
   skills?: string[];
   session_strategy?: 'new' | 'same';
   enabled?: boolean;
+  /** 不传或 null 表示不推送 */
+  notify?: ImTarget | null;
 }
 
 export const schedulesApi = {
@@ -327,6 +334,8 @@ export const imApi = {
   bindCode: (id: string) => api.post<{ code: string; expires_in: number }>(`/im/channels/${id}/bind-code`),
   bindings: (id: string) => api.get<{ bindings: ImBinding[] }>(`/im/channels/${id}/bindings`),
   unbind: (id: string, bindingId: string) => api.delete(`/im/channels/${id}/bindings/${bindingId}`),
+  /** 可以推送定时任务结果的 IM 会话（给机器人发过消息的） */
+  targets: () => api.get<{ targets: Array<ImTarget & { label: string }> }>('/im/targets'),
 };
 
 // ===== 后台任务 API =====

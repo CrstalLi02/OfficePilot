@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
+use base64::Engine;
 use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::Message;
@@ -329,13 +330,21 @@ async fn connect_once(channel: &Channel, cancel: &CancellationToken) -> Result<(
                 let Some(payload) = fragments.push(&message_id, sum, seq, frame.payload.clone().unwrap_or_default()) else {
                     continue;
                 };
+                let event = serde_json::from_slice::<Value>(&payload);
+                // 卡片回调的 ACK 里带一个提示（data 为响应 JSON 的 base64），其他事件不带内容
+                let data = match &event {
+                    Ok(e) if feishu::event_type(e) == "card.action.trigger" => {
+                        json!(base64::engine::general_purpose::STANDARD.encode(feishu::card_toast("已收到，正在处理").to_string()))
+                    }
+                    _ => Value::Null,
+                };
                 // 先回 ACK，处理放到后台
                 let mut ack = frame.clone();
                 ack.headers.push(("biz_rt".into(), started.elapsed().as_millis().to_string()));
-                ack.payload = Some(serde_json::to_vec(&json!({ "code": 200, "headers": null, "data": null }))?);
+                ack.payload = Some(serde_json::to_vec(&json!({ "code": 200, "headers": null, "data": data }))?);
                 write.send(Message::Binary(ack.encode())).await.context("发送 ACK 失败")?;
-                if kind == "event" {
-                    match serde_json::from_slice::<Value>(&payload) {
+                if kind == "event" || kind == "card" {
+                    match event {
                         Ok(event) => {
                             let channel_id = channel.id.clone();
                             tokio::spawn(super::router::handle_event(channel_id, event));
