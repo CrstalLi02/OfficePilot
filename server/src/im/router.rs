@@ -594,7 +594,12 @@ impl Progress {
                 let id = call_id();
                 if !self.steps.iter().any(|(c, _, _)| *c == id) {
                     let tool = d.get("tool").and_then(Value::as_str).unwrap_or_default();
-                    self.steps.push((id, tool_label(tool).to_string(), None));
+                    // 插件工具 mcp__标识__工具名 → 插件 标识 · 工具名
+                    let label = match tool.strip_prefix("mcp__").and_then(|rest| rest.split_once("__")) {
+                        Some((slug, name)) => format!("插件 {slug} · {name}"),
+                        None => tool_label(tool).to_string(),
+                    };
+                    self.steps.push((id, label, None));
                     return true;
                 }
                 false
@@ -882,8 +887,10 @@ mod tests {
         assert!(!p.apply(&ev("tool_call", json!({ "call_id": "c1", "tool": "web_search" }))));
         p.apply(&ev("tool_result", json!({ "call_id": "c1", "success": true })));
         p.apply(&ev("tool_start", json!({ "call_id": "c2", "tool": "doc_generate" })));
+        p.apply(&ev("tool_start", json!({ "call_id": "c3", "tool": "mcp__amap__maps_weather" })));
+        p.apply(&ev("tool_result", json!({ "call_id": "c3", "success": true })));
         p.apply(&ev("message", json!({ "text": "正在写" })));
-        assert_eq!(p.running_body(), "✅ 联网搜索\n⏳ 生成 Word 文档\n\n正在写");
+        assert_eq!(p.running_body(), "✅ 联网搜索\n⏳ 生成 Word 文档\n✅ 插件 amap · maps_weather\n\n正在写");
         assert!(!p.is_finished());
         p.apply(&ev("done", json!({ "summary": "好了" })));
         assert!(p.is_finished());

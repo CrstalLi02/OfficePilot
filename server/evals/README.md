@@ -56,3 +56,14 @@ mock LLM（`dev/mock_llm.py`）总是调用第一个可用工具，只能用来�
 ### 定时任务用例（C1）
 
 新增 4 条 `schedule` 类用例（每周周报、每日简报、每月清单、查看已有定时任务）。deepseek-v4-pro ×5：19/20 通过，唯一一次未通过是先 `use_skill` 加载周报技能（计入“含准备步骤”）。工具描述已说明周期性请求应直接创建，技能写进 `skills` 参数、到点再加载。
+
+### MCP 插件用例（C3）
+
+新增 4 条 `mcp` 类用例（`requires_mcp`）：查天气、查汇率、创建工单，以及“写制度文档”时不应被插件工具抢走。需要接入插件才会运行：
+
+```bash
+python3 dev/mock_mcp.py &
+WALIOFFICE_MCP_ALLOW_PRIVATE=1 walioffice eval --filter mcp --mcp http://127.0.0.1:8779/mcp
+```
+
+deepseek-v4-pro ×3：12/12 通过。同时加入“只能调用本轮暴露的工具”的校验后，全量 67 条 ×1 严格 91.0%、含准备步骤 98.5%，与之前持平。

@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
-import { AlarmClock, AlertCircle, Ban, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
+import { AlarmClock, AlertCircle, Ban, Puzzle, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
 import { workspaceApi } from '@/api'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
+
+/** MCP 插件工具：mcp__标识__工具名 → 「标识 · 工具名」 */
+export function mcpMeta(tool: string): { label: string; icon: typeof Wrench } | null {
+  const m = /^mcp__([a-z0-9_]+?)__(.+)$/.exec(tool)
+  return m ? { label: `插件 ${m[1]} · ${m[2]}`, icon: Puzzle } : null
+}
 
 export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> = {
   schedule_create: { label: '创建定时任务', icon: AlarmClock },
@@ -86,7 +92,7 @@ function UndoButton({ opId }: { opId: string }) {
 }
 
 function ToolCard({ run, now }: { run: ToolRun; now: number }) {
-  const meta = TOOL_META[run.tool] || { label: run.tool, icon: Wrench }
+  const meta = TOOL_META[run.tool] || mcpMeta(run.tool) || { label: run.tool, icon: Wrench }
   const Icon = meta.icon
   const active = run.status === 'pending' || run.status === 'running'
   const elapsed = run.durationMs ?? (run.runningAt ? now - run.runningAt : undefined)

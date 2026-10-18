@@ -14,14 +14,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Nonce};
-use base64::Engine;
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use sqlx::Row;
 
 use crate::agent::plan::AgentMode;
@@ -35,41 +31,6 @@ const BIND_CODE_TTL: Duration = Duration::from_secs(600);
 
 fn bad(msg: impl Into<String>) -> AppError {
     AppError::BadRequest(msg.into())
-}
-
-// ───────────────────────── 密钥加密 ─────────────────────────
-
-/// 由服务端 JWT 密钥派生的加密密钥
-fn cipher_for(server_secret: &str) -> Aes256Gcm {
-    let key = Sha256::digest(format!("walioffice-im-secrets:{server_secret}").as_bytes());
-    Aes256Gcm::new_from_slice(&key).expect("32 字节密钥")
-}
-
-fn seal_with(cipher: &Aes256Gcm, plain: &str) -> String {
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let mut out = nonce.to_vec();
-    out.extend(cipher.encrypt(&nonce, plain.as_bytes()).expect("加密不会失败"));
-    format!("v1:{}", base64::engine::general_purpose::STANDARD.encode(out))
-}
-
-fn open_with(cipher: &Aes256Gcm, sealed: &str) -> Option<String> {
-    let raw = base64::engine::general_purpose::STANDARD.decode(sealed.strip_prefix("v1:")?).ok()?;
-    if raw.len() < 12 {
-        return None;
-    }
-    let (nonce, data) = raw.split_at(12);
-    let plain = cipher.decrypt(Nonce::from_slice(nonce), data).ok()?;
-    String::from_utf8(plain).ok()
-}
-
-/// 加密：v1:base64(nonce || 密文)
-pub fn seal(plain: &str) -> String {
-    seal_with(&cipher_for(&crate::config::config().jwt_secret), plain)
-}
-
-/// 解密失败（例如更换了 JWT 密钥）时返回 None，渠道需要重新填写密钥
-pub fn open(sealed: &str) -> Option<String> {
-    open_with(&cipher_for(&crate::config::config().jwt_secret), sealed)
 }
 
 // ───────────────────────── 渠道 ─────────────────────────
@@ -172,7 +133,7 @@ const CHANNEL_COLUMNS: &str = "id, owner_id, platform, name, config, secrets, en
 
 fn row_to_channel(row: &sqlx::any::AnyRow) -> AppResult<Channel> {
     let sealed = text_column(row, 5)?.unwrap_or_default();
-    let opened = open(&sealed);
+    let opened = crate::secrets::open(&sealed);
     Ok(Channel {
         id: row.try_get(0)?,
         owner_id: row.try_get(1)?,
@@ -281,7 +242,7 @@ pub async fn create_channel(pool: &DbPool, owner_id: &str, input: &ChannelInput)
     .bind(&platform)
     .bind(input.name.trim())
     .bind(serde_json::to_string(&input.config)?)
-    .bind(seal(&serde_json::to_string(&secrets)?))
+    .bind(crate::secrets::seal(&serde_json::to_string(&secrets)?))
     .bind(input.enabled.unwrap_or(true) as i64)
     .bind(&now)
     .bind(&now)
@@ -298,7 +259,7 @@ pub async fn update_channel(pool: &DbPool, owner_id: &str, id: &str, input: &Cha
     sqlx::query("UPDATE im_channels SET name = ?, config = ?, secrets = ?, enabled = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
         .bind(input.name.trim())
         .bind(serde_json::to_string(&input.config)?)
-        .bind(seal(&serde_json::to_string(&secrets)?))
+        .bind(crate::secrets::seal(&serde_json::to_string(&secrets)?))
         .bind(input.enabled.unwrap_or(current.enabled) as i64)
         .bind(Utc::now().to_rfc3339())
         .bind(id)
@@ -651,17 +612,6 @@ pub async fn set_schedule_target(pool: &DbPool, owner_id: &str, schedule_id: &st
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sealed_secrets_round_trip_and_need_same_key() {
-        let cipher = cipher_for("server-secret");
-        let sealed = seal_with(&cipher, r#"{"app_secret":"abc"}"#);
-        assert!(sealed.starts_with("v1:") && !sealed.contains("abc"));
-        assert_ne!(sealed, seal_with(&cipher, r#"{"app_secret":"abc"}"#), "每次用新的 nonce");
-        assert_eq!(open_with(&cipher, &sealed).as_deref(), Some(r#"{"app_secret":"abc"}"#));
-        assert_eq!(open_with(&cipher_for("rotated"), &sealed), None);
-        assert_eq!(open_with(&cipher, "garbage"), None);
-    }
 
     #[test]
     fn bind_codes_are_single_use_and_scoped() {

@@ -45,6 +45,9 @@ struct EvalCase {
     /// 必须直接回复文本、不调用任何工具
     #[serde(default)]
     expect_no_tool: bool,
+    /// 需要 --mcp 指定的插件（工具名前缀 mcp__demo__）；未指定时跳过
+    #[serde(default)]
+    requires_mcp: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,6 +104,10 @@ struct Options {
     out: PathBuf,
     label: Option<String>,
     mode: AgentMode,
+    /// 评测时接入的 MCP 服务地址（Streamable HTTP，路径以 /sse 结尾时按旧版 SSE）
+    mcp: Option<String>,
+    /// 访问 MCP 服务的请求头，格式 "Name: value"
+    mcp_header: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<Options> {
@@ -113,6 +120,8 @@ fn parse_args(args: &[String]) -> Result<Options> {
         out: PathBuf::from("evals/reports"),
         label: None,
         mode: AgentMode::Craft,
+        mcp: None,
+        mcp_header: None,
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -129,6 +138,8 @@ fn parse_args(args: &[String]) -> Result<Options> {
             "--filter" => opts.filter = Some(value()?),
             "--out" => opts.out = PathBuf::from(value()?),
             "--label" => opts.label = Some(value()?),
+            "--mcp" => opts.mcp = Some(value()?),
+            "--mcp-header" => opts.mcp_header = Some(value()?),
             "--mode" => {
                 opts.mode = serde_json::from_value(serde_json::Value::String(value()?))
                     .context("--mode 只能是 craft / plan / ask")?
@@ -250,6 +261,7 @@ async fn run_attempt(
     rep: usize,
     mode: AgentMode,
     client: &LlmClient,
+    extra_tools: &[crate::agent::tool::DynTool],
 ) -> (Vec<String>, Attempt) {
     let session_id = format!("eval-{}-{rep}", case.id);
     let history: Vec<ChatMessage> = case
@@ -284,6 +296,7 @@ async fn run_attempt(
         system_prompt: format!("{system_prompt}\n\n{}", crate::skills::builtin_listing()),
         allowed_tools,
         mode,
+        extra_tools: extra_tools.to_vec(),
     };
     let InitialRequest {
         conversation,
@@ -436,14 +449,57 @@ fn render_markdown(
     out
 }
 
+/// 评测用的插件：标识固定为 demo，工具名为 mcp__demo__*
+async fn load_eval_mcp(url: &str, header: Option<&str>) -> Result<Vec<crate::agent::tool::DynTool>> {
+    let mut headers = std::collections::BTreeMap::new();
+    if let Some((name, value)) = header.and_then(|h| h.split_once(':')) {
+        headers.insert(name.trim().to_string(), value.trim().to_string());
+    }
+    let sse = reqwest::Url::parse(url).is_ok_and(|u| u.path().trim_end_matches('/').ends_with("/sse"));
+    let now = chrono::Utc::now().to_rfc3339();
+    let server = crate::mcp::McpServer {
+        id: "eval-mcp".into(),
+        owner_id: "eval".into(),
+        slug: "demo".into(),
+        name: "演示插件".into(),
+        transport: if sse { "sse".into() } else { "http".into() },
+        url: Some(url.to_string()),
+        command: None,
+        args: vec![],
+        config: Default::default(),
+        secrets: crate::mcp::ServerSecrets { headers, env: Default::default() },
+        secrets_broken: false,
+        enabled: true,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    let tools = crate::mcp::pool::tools(&server, true).await.map_err(|e| anyhow!("连接评测插件失败：{e}"))?;
+    println!("▶ 接入插件 {url}：{} 个工具", tools.len());
+    Ok(tools
+        .into_iter()
+        .map(|info| std::sync::Arc::new(crate::mcp::pool::McpTool::new(&server, info)) as crate::agent::tool::DynTool)
+        .collect())
+}
+
 pub async fn run(args: &[String]) -> Result<()> {
     let opts = parse_args(args)?;
-    let cases = load_cases(&opts.cases, opts.filter.as_deref())?;
+    let mut cases = load_cases(&opts.cases, opts.filter.as_deref())?;
+
+    crate::agent::tools::register_all_tools().await;
+    let extra_tools = match opts.mcp.as_deref() {
+        Some(url) => load_eval_mcp(url, opts.mcp_header.as_deref()).await?,
+        None => {
+            let before = cases.len();
+            cases.retain(|c| !c.requires_mcp);
+            if cases.len() < before {
+                println!("（跳过 {} 条需要插件的用例；用 --mcp <地址> 接入 dev/mock_mcp.py 后可评测）", before - cases.len());
+            }
+            vec![]
+        }
+    };
     if cases.is_empty() {
         return Err(anyhow!("没有匹配的用例"));
     }
-
-    crate::agent::tools::register_all_tools().await;
 
     let mut client = LlmClient::new();
     if let Some(model) = opts.model.as_deref() {
@@ -470,8 +526,9 @@ pub async fn run(args: &[String]) -> Result<()> {
         .map(|(ci, rep)| {
             let client = client.clone();
             let case = &cases[ci];
+            let extra_tools = &extra_tools;
             async move {
-                let (exposed, attempt) = run_attempt(case, rep, mode, &client).await;
+                let (exposed, attempt) = run_attempt(case, rep, mode, &client, extra_tools).await;
                 println!(
                     "  {} {:<28} {}",
                     if attempt.passed { "✓" } else { "✗" },

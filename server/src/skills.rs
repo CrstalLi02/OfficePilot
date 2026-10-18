@@ -403,7 +403,8 @@ pub fn narrow_tools(selected: &[&Skill], known_tools: &[String], current: Option
     let declared: Vec<String> = selected
         .iter()
         .flat_map(|s| s.meta.allowed_tools.iter().cloned())
-        .filter(|t| known_tools.contains(t))
+        // MCP 插件工具因用户而异，按名称或 mcp__标识__* 通配保留
+        .filter(|t| known_tools.contains(t) || t.starts_with("mcp__"))
         .collect();
     if declared.is_empty() {
         return current;

@@ -338,6 +338,63 @@ export const imApi = {
   targets: () => api.get<{ targets: Array<ImTarget & { label: string }> }>('/im/targets'),
 };
 
+// ===== MCP 插件 API =====
+export interface McpServer {
+  id: string;
+  slug: string;
+  name: string;
+  transport: 'http' | 'sse' | 'stdio';
+  url?: string | null;
+  command?: string | null;
+  args: string[];
+  description: string;
+  disabled_tools: string[];
+  header_names: string[];
+  env_names: string[];
+  secrets_broken: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  status: { state: string; error?: string | null; tool_count?: number; server_name?: string; checked_at?: string };
+}
+
+export interface McpServerInput {
+  name: string;
+  slug?: string;
+  transport: McpServer['transport'];
+  url?: string;
+  command?: string;
+  args?: string[];
+  description?: string;
+  /** 值留空表示沿用已保存的值；列表里没有的会被删除 */
+  headers?: Array<{ name: string; value: string }>;
+  env?: Array<{ name: string; value: string }>;
+  enabled?: boolean;
+}
+
+export interface McpTool {
+  name: string;
+  title?: string | null;
+  description: string;
+  read_only: boolean;
+  enabled: boolean;
+  exposed_name: string;
+}
+
+export type McpToolsResult = { ok: true; tools: McpTool[]; status?: McpServer['status'] } | { ok: false; error: string };
+
+export const mcpApi = {
+  capabilities: () => api.get<{ stdio: boolean; allow_private: boolean; max_tools_per_run: number }>('/mcp/capabilities'),
+  list: () => api.get<{ servers: McpServer[] }>('/mcp/servers'),
+  create: (input: McpServerInput) => api.post<McpServer>('/mcp/servers', input),
+  update: (id: string, input: McpServerInput) => api.put<McpServer>(`/mcp/servers/${id}`, input),
+  remove: (id: string) => api.delete(`/mcp/servers/${id}`),
+  test: (id: string) => api.post<McpToolsResult>(`/mcp/servers/${id}/test`),
+  tools: (id: string) => api.get<McpToolsResult>(`/mcp/servers/${id}/tools`),
+  setDisabledTools: (id: string, disabled: string[]) => api.put<McpServer>(`/mcp/servers/${id}/tools`, { disabled }),
+  importConfig: (config: string) => api.post<{ created: McpServer[]; errors: string[] }>('/mcp/import', { config }),
+};
+
 // ===== 后台任务 API =====
 export interface AgentTask {
   id: string;

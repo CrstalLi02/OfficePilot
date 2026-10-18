@@ -472,6 +472,7 @@ pub async fn start_chat_task(
                     system_prompt: String::new(),
                     allowed_tools: run.allowed_tools,
                     mode: decision.next_mode(),
+                    extra_tools: vec![],
                 },
             )
         }
@@ -490,6 +491,7 @@ pub async fn start_chat_task(
                     .join("\n\n"),
                 allowed_tools: allowed_tools.clone(),
                 mode,
+                extra_tools: vec![],
             },
         ),
     };
@@ -539,6 +541,21 @@ pub async fn start_chat_task(
     tokio::spawn(async move {
         // 排队等待运行名额（每个用户同时运行的任务数有上限）
         let _permit = crate::tasks::acquire_slot(&pool_for_save, &sink, &user_id_for_save).await;
+        // 加载用户接入的 MCP 插件工具（界面限定了工具范围且不含插件时跳过）
+        let mut agent_config = agent_config;
+        let wants_mcp = agent_config.allowed_tools.as_ref().map_or(true, |a| a.iter().any(|t| t.starts_with("mcp__")));
+        if wants_mcp {
+            let (tools, warnings) = crate::mcp::pool::tools_for_user(&user_id_for_save).await;
+            if !warnings.is_empty() {
+                sink.emit("state_update", serde_json::json!({
+                    "phase": "running",
+                    "step": "加载插件",
+                    "detail": warnings.join("；"),
+                    "at": chrono::Utc::now().to_rfc3339(),
+                }));
+            }
+            agent_config.extra_tools = tools;
+        }
         let mut event_rx = run_agent_loop(start, attachments, ctx, agent_config, client.clone(), cancel).await;
         let mut final_status = "failed";
         let mut final_summary: Option<String> = None;

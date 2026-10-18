@@ -110,6 +110,24 @@ pub struct AgentConfig {
     /// 用户在界面上显式限定的工具（如图片/视频模式）
     pub allowed_tools: Option<Vec<String>>,
     pub mode: AgentMode,
+    /// 本次运行额外可用的工具（用户接入的 MCP 插件）
+    pub extra_tools: Vec<DynTool>,
+}
+
+/// 工具范围匹配：精确名称，或以 * 结尾的前缀（如 mcp__amap__*）
+fn scope_allows(allowed: &[String], name: &str) -> bool {
+    allowed.iter().any(|a| match a.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => a == name,
+    })
+}
+
+/// 按名称找工具：先找本次运行的插件工具，再找内置工具
+async fn lookup_tool(config: &AgentConfig, name: &str) -> Option<DynTool> {
+    if let Some(tool) = config.extra_tools.iter().find(|t| t.name() == name) {
+        return Some(tool.clone());
+    }
+    REGISTRY.get(name).await
 }
 
 const OFFICE_AGENT_PROMPT: &str = r#"你是 WaLiOffice 的智能办公 Agent，帮助用户完成文档、演示、表格、图表、流程图、图片、视频和资料检索等办公任务。每个工具的适用场景写在它的描述里，按描述选择工具。
@@ -141,14 +159,16 @@ pub struct InitialRequest {
 /// 按工作模式与界面限定筛选暴露给模型的工具
 pub async fn function_defs_for(config: &AgentConfig) -> Vec<FunctionDef> {
     let mut defs = Vec::new();
-    for tool in REGISTRY.list().await {
+    let mut all = REGISTRY.list().await;
+    all.extend(config.extra_tools.iter().cloned());
+    for tool in all {
         let name = tool.name();
         let in_mode = config.mode.allows(name, tool.is_read_only());
         let in_scope = name == PROPOSE_PLAN
             || config
                 .allowed_tools
                 .as_ref()
-                .map_or(true, |allowed| allowed.iter().any(|a| a == name));
+                .map_or(true, |allowed| scope_allows(allowed, name));
         if in_mode && in_scope {
             defs.push(FunctionDef {
                 def_type: "function".to_string(),
@@ -378,9 +398,11 @@ pub async fn run_agent_loop(
 
             let mut calls = Vec::with_capacity(tool_calls.len());
             for (index, tc) in tool_calls.into_iter().enumerate() {
+                // 只能调用本轮暴露给模型的工具（模式 / 范围之外的即使存在也不执行）
+                let exposed = function_defs.iter().any(|d| d.function.name == tc.function.name);
                 calls.push(PlannedCall {
                     call_id: call_id(turn, index),
-                    tool: REGISTRY.get(&tc.function.name).await,
+                    tool: if exposed { lookup_tool(&config, &tc.function.name).await } else { None },
                     input: serde_json::from_str(&tc.function.arguments)
                         .unwrap_or(serde_json::json!({})),
                     llm_call_id: tc.id,
@@ -656,7 +678,7 @@ async fn run_one(
                 .map(|t| t.name().to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            ToolResult::err(format!("工具 \"{}\" 未注册。可用工具: {available}", call.name))
+            ToolResult::err(format!("工具 \"{}\" 不可用（不存在，或当前模式 / 范围不开放）。可用工具: {available}", call.name))
         }
         Some(tool) => {
             let call_ctx = ctx.for_call(&call.call_id);
