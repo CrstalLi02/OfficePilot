@@ -317,7 +317,7 @@ pub async fn delete_channel(pool: &DbPool, owner_id: &str, id: &str) -> AppResul
     if result.rows_affected() == 0 {
         return Ok(false);
     }
-    for table in ["im_bindings", "im_conversations", "im_events"] {
+    for table in ["im_bindings", "im_conversations", "im_events", "im_chats", "im_schedule_targets"] {
         sqlx::query(&format!("DELETE FROM {table} WHERE channel_id = ?")).bind(id).execute(pool).await?;
     }
     Ok(true)
@@ -507,8 +507,145 @@ pub struct Incoming {
     pub text: String,
     /// 群聊里是否 @ 了机器人
     pub mentioned_bot: bool,
-    /// 不支持的消息类型（图片、文件等，C2-b 支持）
+    /// 消息里的图片 / 文件（需要再下载）
+    pub resources: Vec<Resource>,
+    /// 不支持的消息类型（语音、表情等）
     pub unsupported: Option<String>,
+}
+
+/// 消息里附带的图片或文件
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resource {
+    pub key: String,
+    /// image / file
+    pub kind: String,
+    pub name: Option<String>,
+}
+
+// ───────────────────────── 会话信息与推送目标 ─────────────────────────
+
+/// 推送目标：某个渠道里的某个会话
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImTarget {
+    pub channel_id: String,
+    pub chat_id: String,
+}
+
+/// 记录收到消息的会话（类型、群名），用于在界面上选择推送目标
+pub async fn remember_chat(pool: &DbPool, channel_id: &str, chat_id: &str, chat_type: &str, name: Option<&str>) {
+    let now = Utc::now().to_rfc3339();
+    let updated = sqlx::query("UPDATE im_chats SET chat_type = ?, name = COALESCE(?, name), updated_at = ? WHERE channel_id = ? AND chat_id = ?")
+        .bind(chat_type)
+        .bind(name)
+        .bind(&now)
+        .bind(channel_id)
+        .bind(chat_id)
+        .execute(pool)
+        .await
+        .map(|r| r.rows_affected())
+        .unwrap_or(0);
+    if updated == 0 {
+        let _ = sqlx::query("INSERT INTO im_chats (channel_id, chat_id, chat_type, name, updated_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(channel_id)
+            .bind(chat_id)
+            .bind(chat_type)
+            .bind(name)
+            .bind(&now)
+            .execute(pool)
+            .await;
+    }
+}
+
+pub async fn chat_known(pool: &DbPool, channel_id: &str, chat_id: &str) -> bool {
+    sqlx::query("SELECT chat_id FROM im_chats WHERE channel_id = ? AND chat_id = ?")
+        .bind(channel_id)
+        .bind(chat_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+fn chat_label(channel_name: &str, chat_id: &str, chat_type: &str, name: Option<String>) -> String {
+    let tail: String = chat_id.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+    match (chat_type, name.filter(|n| !n.trim().is_empty())) {
+        ("group", Some(name)) => format!("{channel_name} · 群聊「{name}」"),
+        ("group", None) => format!("{channel_name} · 群聊（…{tail}）"),
+        _ => format!("{channel_name} · 私聊（…{tail}）"),
+    }
+}
+
+/// 用户可选的推送目标：自己的渠道里收到过消息的会话
+pub async fn targets(pool: &DbPool, owner_id: &str) -> AppResult<Vec<Value>> {
+    let rows = sqlx::query(
+        "SELECT c.id, c.name, t.chat_id, t.chat_type, t.name FROM im_chats t JOIN im_channels c ON c.id = t.channel_id
+         WHERE c.owner_id = ? ORDER BY t.updated_at DESC",
+    )
+    .bind(owner_id)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|row| {
+            let channel_id: String = row.try_get(0)?;
+            let channel_name = text_column(row, 1)?.unwrap_or_default();
+            let chat_id = text_column(row, 2)?.unwrap_or_default();
+            let chat_type = text_column(row, 3)?.unwrap_or_default();
+            let label = chat_label(&channel_name, &chat_id, &chat_type, text_column(row, 4)?);
+            Ok(json!({ "channel_id": channel_id, "chat_id": chat_id, "label": label }))
+        })
+        .collect()
+}
+
+/// 定时任务的推送目标（附带显示名称）
+pub async fn schedule_target(pool: &DbPool, schedule_id: &str) -> Option<(ImTarget, String)> {
+    let row = sqlx::query(
+        "SELECT s.channel_id, s.chat_id, c.name, t.chat_type, t.name FROM im_schedule_targets s
+         JOIN im_channels c ON c.id = s.channel_id
+         LEFT JOIN im_chats t ON t.channel_id = s.channel_id AND t.chat_id = s.chat_id
+         WHERE s.schedule_id = ?",
+    )
+    .bind(schedule_id)
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+    let target = ImTarget { channel_id: row.try_get(0).ok()?, chat_id: text_column(&row, 1).ok()??.to_string() };
+    let label = chat_label(
+        &text_column(&row, 2).ok()?.unwrap_or_default(),
+        &target.chat_id,
+        &text_column(&row, 3).ok()?.unwrap_or_default(),
+        text_column(&row, 4).ok()?,
+    );
+    Some((target, label))
+}
+
+/// 推送目标必须是该用户自己的渠道里收到过消息的会话
+pub async fn validate_target(pool: &DbPool, owner_id: &str, target: Option<&ImTarget>) -> AppResult<()> {
+    if let Some(target) = target {
+        if find_channel(pool, &target.channel_id).await?.filter(|c| c.owner_id == owner_id).is_none() {
+            return Err(bad("推送目标的渠道不存在"));
+        }
+        if !chat_known(pool, &target.channel_id, &target.chat_id).await {
+            return Err(bad("推送目标不存在：需要先在这个飞书会话里给机器人发过消息"));
+        }
+    }
+    Ok(())
+}
+
+/// 设置或清除定时任务的推送目标
+pub async fn set_schedule_target(pool: &DbPool, owner_id: &str, schedule_id: &str, target: Option<&ImTarget>) -> AppResult<()> {
+    validate_target(pool, owner_id, target).await?;
+    sqlx::query("DELETE FROM im_schedule_targets WHERE schedule_id = ?").bind(schedule_id).execute(pool).await?;
+    if let Some(target) = target {
+        sqlx::query("INSERT INTO im_schedule_targets (schedule_id, channel_id, chat_id, created_at) VALUES (?, ?, ?, ?)")
+            .bind(schedule_id)
+            .bind(&target.channel_id)
+            .bind(&target.chat_id)
+            .bind(Utc::now().to_rfc3339())
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -539,5 +676,12 @@ mod tests {
         let (second, _) = issue_bind_code("ch-c");
         assert!(!consume_bind_code("ch-c", &first) || first == second);
         assert!(consume_bind_code("ch-c", &second));
+    }
+
+    #[test]
+    fn chat_labels() {
+        assert_eq!(chat_label("助手", "oc_abcdef12", "group", Some("项目群".into())), "助手 · 群聊「项目群」");
+        assert_eq!(chat_label("助手", "oc_abcdef12", "group", None), "助手 · 群聊（…ef12）");
+        assert_eq!(chat_label("助手", "oc_abcdef12", "p2p", Some("x".into())), "助手 · 私聊（…ef12）");
     }
 }

@@ -8,10 +8,10 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 
 use super::feishu::{self, Tone};
-use super::{manager, Channel, Conversation, Incoming};
+use super::{manager, Channel, Conversation, ImTarget, Incoming};
 use crate::agent::plan::{AgentMode, Decision, Plan, PlanDecision};
 use crate::db::{session_repo, DbPool};
-use crate::models::{Artifact, ChatRequest};
+use crate::models::{Artifact, ChatAttachment, ChatRequest};
 use crate::tasks::{Origin, TaskEvent};
 
 /// 每个 IM 账号每分钟最多触发的消息数
@@ -113,7 +113,7 @@ fn allow(key: &str) -> bool {
 
 // ───────────────────────── 入口 ─────────────────────────
 
-/// 长连接与事件回调收到的事件都从这里进来
+/// 长连接与事件回调收到的事件都从这里进来：消息或卡片按钮回调
 pub async fn handle_event(channel_id: String, event: Value) {
     let pool = crate::state::db_pool();
     let channel = match super::find_channel(&pool, &channel_id).await {
@@ -121,6 +121,19 @@ pub async fn handle_event(channel_id: String, event: Value) {
         _ => return,
     };
     manager::touch(&channel.id);
+    let client = feishu::Client::new(&channel);
+
+    if let Some(action) = feishu::parse_card_action(&event) {
+        if !super::first_seen(&pool, &channel.id, &action.event_key).await {
+            return;
+        }
+        if let Err(e) = handle_card_action(&pool, &channel, &client, &action).await {
+            tracing::warn!("[IM] 处理卡片回调失败：{e:#}");
+            let _ = client.reply(&action.message_id, "text", &json!({ "text": format!("处理失败：{e}") })).await;
+        }
+        return;
+    }
+
     let bot = manager::bot_open_id(&channel.id);
     let Some(msg) = feishu::parse_message_event(&event, bot.as_deref()) else { return };
     if !super::first_seen(&pool, &channel.id, &msg.event_key).await {
@@ -129,7 +142,6 @@ pub async fn handle_event(channel_id: String, event: Value) {
     if msg.chat_type != "p2p" && !msg.mentioned_bot {
         return;
     }
-    let client = feishu::Client::new(&channel);
     if let Err(e) = process(&pool, &channel, &client, &msg).await {
         tracing::warn!("[IM] 处理消息失败：{e:#}");
         let _ = client.reply(&msg.message_id, "text", &json!({ "text": format!("处理失败：{e}") })).await;
@@ -151,6 +163,134 @@ fn web_link(session_id: &str) -> Option<String> {
     (!base.is_empty()).then(|| format!("{base}/?s={session_id}"))
 }
 
+/// 第一次在某个会话收到消息时记下会话类型与群名（群名用于选择推送目标）
+async fn note_chat(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg: &Incoming) {
+    if super::chat_known(pool, &channel.id, &msg.chat_id).await {
+        return;
+    }
+    let name = if msg.chat_type == "group" { client.chat_name(&msg.chat_id).await } else { None };
+    super::remember_chat(pool, &channel.id, &msg.chat_id, &msg.chat_type, name.as_deref()).await;
+}
+
+// ───────────────────────── 收到的图片 / 文件 ─────────────────────────
+
+/// 单独发来的图片 / 文件先暂存，等下一条文字消息一起交给 Agent
+const PENDING_TTL: Duration = Duration::from_secs(600);
+const MAX_PENDING: usize = 10;
+
+#[derive(Default, Clone)]
+pub struct Received {
+    pub attachments: Vec<ChatAttachment>,
+    pub file_refs: Vec<String>,
+    pub names: Vec<String>,
+}
+
+impl Received {
+    fn is_empty(&self) -> bool {
+        self.attachments.is_empty() && self.file_refs.is_empty()
+    }
+    fn extend(&mut self, other: Received) {
+        self.attachments.extend(other.attachments);
+        self.file_refs.extend(other.file_refs);
+        self.names.extend(other.names);
+    }
+}
+
+static PENDING: Lazy<Mutex<HashMap<String, (Received, Instant)>>> = Lazy::new(Default::default);
+
+/// 暂存，返回目前一共暂存了几个
+pub fn stash(conversation_id: &str, received: Received) -> usize {
+    let mut all = PENDING.lock().unwrap();
+    let now = Instant::now();
+    all.retain(|_, (_, at)| now.duration_since(*at) < PENDING_TTL);
+    let entry = all.entry(conversation_id.to_string()).or_insert_with(|| (Received::default(), now));
+    entry.0.extend(received);
+    entry.1 = now;
+    let n = entry.0.names.len();
+    if n > MAX_PENDING {
+        entry.0.attachments.truncate(MAX_PENDING);
+        entry.0.file_refs.truncate(MAX_PENDING);
+        entry.0.names.truncate(MAX_PENDING);
+    }
+    entry.0.names.len()
+}
+
+/// 取出暂存（过期的丢弃）
+pub fn take_stash(conversation_id: &str) -> Received {
+    match PENDING.lock().unwrap().remove(conversation_id) {
+        Some((received, at)) if at.elapsed() < PENDING_TTL => received,
+        _ => Received::default(),
+    }
+}
+
+fn extension_for(mime: &str) -> &'static str {
+    match mime {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    }
+}
+
+/// 下载消息里的图片 / 文件：图片作为视觉附件，文件存进“我的文件”并像 @ 引用一样交给 Agent
+async fn fetch_resources(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg: &Incoming) -> (Received, Vec<String>) {
+    use base64::Engine;
+    let mut received = Received::default();
+    let mut errors = Vec::new();
+    for (i, resource) in msg.resources.iter().enumerate() {
+        let (bytes, mime) = match client.download(&msg.message_id, &resource.key, &resource.kind).await {
+            Ok(v) => v,
+            Err(e) => {
+                errors.push(format!("{}：{e}", resource.name.as_deref().unwrap_or(if resource.kind == "image" { "图片" } else { "文件" })));
+                continue;
+            }
+        };
+        if resource.kind == "image" {
+            let mime = if mime.starts_with("image/") { mime } else { "image/jpeg".to_string() };
+            let name = format!("飞书图片-{}.{}", i + 1, extension_for(&mime));
+            received.attachments.push(ChatAttachment {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: name.clone(),
+                kind: "image".into(),
+                mime_type: mime.clone(),
+                size: bytes.len(),
+                text_content: None,
+                data_url: Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes))),
+            });
+            received.names.push(name);
+            continue;
+        }
+        let name = resource.name.clone().unwrap_or_else(|| format!("飞书文件-{}", i + 1));
+        let mime = if mime == "application/octet-stream" || mime.is_empty() {
+            mime_guess::from_path(&name).first_or_octet_stream().to_string()
+        } else {
+            mime
+        };
+        let saved = crate::file_store::save_file_bytes(
+            pool,
+            &channel.owner_id,
+            None,
+            &name,
+            &bytes,
+            &mime,
+            &format!("飞书收到的文件：{name}"),
+            json!({ "source": "im", "platform": channel.platform, "chat_id": msg.chat_id }),
+        )
+        .await;
+        match saved {
+            Ok(Some(row)) => {
+                received.file_refs.push(row.id);
+                received.names.push(name);
+            }
+            Ok(None) => errors.push(format!("{name}：文件为空")),
+            Err(e) => errors.push(format!("{name}：保存失败 {e}")),
+        }
+    }
+    (received, errors)
+}
+
+// ───────────────────────── 消息处理 ─────────────────────────
+
 async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg: &Incoming) -> anyhow::Result<()> {
     if !allow(&format!("{}|{}", channel.id, msg.sender_id)) {
         return reply_text(client, msg, "消息太频繁了，请稍后再试").await;
@@ -163,6 +303,7 @@ async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg:
             return reply_text(client, msg, "绑定码无效或已过期，请在网页「设置 → IM 接入」重新生成").await;
         }
         super::add_binding(pool, &channel.id, &msg.sender_id, msg.sender_name.as_deref()).await?;
+        note_chat(pool, channel, client, msg).await;
         reply_card(client, msg, "绑定成功", Tone::Success, &format!("现在可以直接在这里让我干活了。\n\n{HELP}")).await?;
         return Ok(());
     }
@@ -174,9 +315,16 @@ async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg:
         )
         .await;
     }
+    note_chat(pool, channel, client, msg).await;
     if let Some(kind) = &msg.unsupported {
         if msg.text.is_empty() {
-            return reply_text(client, msg, &format!("暂时只支持文字消息（收到的是 {kind}），图片和文件即将支持")).await;
+            let label = match kind.as_str() {
+                "audio" => "语音",
+                "sticker" => "表情",
+                "media" => "视频",
+                _ => kind.as_str(),
+            };
+            return reply_text(client, msg, &format!("暂时不支持{label}消息，可以发文字、图片或文件")).await;
         }
     }
 
@@ -184,11 +332,31 @@ async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg:
     let owner = channel.owner_id.as_str();
     let running = conv.session_id.as_deref().and_then(|sid| crate::tasks::running_for_session(sid, owner));
 
+    // 图片 / 文件：没有文字时先暂存，等下一条消息说明要做什么
+    let mut received = Received::default();
+    if !msg.resources.is_empty() {
+        let (got, errors) = fetch_resources(pool, channel, client, msg).await;
+        if !errors.is_empty() {
+            reply_text(client, msg, &format!("有文件没收到：\n{}", errors.join("\n"))).await?;
+        }
+        if msg.text.is_empty() {
+            if got.is_empty() {
+                return Ok(());
+            }
+            let names = got.names.join("、");
+            let total = stash(&conv.id, got);
+            let hint = if total > 1 { format!("（目前共 {total} 个）") } else { String::new() };
+            return reply_text(client, msg, &format!("已收到 {names}{hint}，接下来告诉我要怎么处理（10 分钟内有效）")).await;
+        }
+        received = got;
+    }
+
     match command {
         Command::Help => return reply_card(client, msg, "使用说明", Tone::Neutral, HELP).await.map(|_| ()),
         Command::New => {
             conv.session_id = None;
             conv.pending_run_id = None;
+            take_stash(&conv.id);
             super::save_conversation(pool, &conv).await?;
             return reply_text(client, msg, &format!("已开启新对话（{}模式）", mode_label(conv.mode))).await;
         }
@@ -231,11 +399,58 @@ async fn process(pool: &DbPool, channel: &Channel, client: &feishu::Client, msg:
                 return reply_text(client, msg, &format!("消息太长了（最多 {MAX_TEXT_CHARS} 字），请精简后再发")).await;
             }
             if running.is_some() {
+                if !received.is_empty() {
+                    stash(&conv.id, received);
+                }
                 return reply_text(client, msg, "上一个任务还在运行，发送 /stop 可以停止，或者等它完成后再发").await;
             }
-            start_run(pool, channel, client, msg, &mut conv, text).await
+            let mut all = take_stash(&conv.id);
+            all.extend(received);
+            start_run(pool, channel, client, msg, &mut conv, text, all).await
         }
     }
+}
+
+/// 卡片按钮：目前是计划的「确认执行」「取消」
+async fn handle_card_action(pool: &DbPool, channel: &Channel, client: &feishu::Client, action: &feishu::CardAction) -> anyhow::Result<()> {
+    if !super::is_bound(pool, &channel.id, &action.operator_id).await? {
+        client.reply(&action.message_id, "text", &json!({ "text": "你还没有绑定账号，不能操作这个计划" })).await?;
+        return Ok(());
+    }
+    if action.value.get("kind").and_then(Value::as_str) != Some("plan") {
+        return Ok(());
+    }
+    let run_id = action.value.get("run_id").and_then(Value::as_str).unwrap_or_default();
+    let approve = action.value.get("decision").and_then(Value::as_str) == Some("approve");
+    let mut conv = super::conversation(pool, channel, &action.chat_id).await?;
+    if conv.pending_run_id.as_deref() != Some(run_id) || run_id.is_empty() {
+        client.reply(&action.message_id, "text", &json!({ "text": "这个计划已经处理过了" })).await?;
+        return Ok(());
+    }
+    // 计划卡片去掉按钮，标明结果
+    let plan = PLANS.lock().unwrap().remove(run_id).unwrap_or_default();
+    let (title, tone, outcome) = if approve {
+        ("计划已确认", Tone::Success, "已开始执行，进度见下方消息")
+    } else {
+        ("计划已取消", Tone::Neutral, "已放弃这个计划")
+    };
+    let body = if plan.is_empty() { outcome.to_string() } else { format!("{plan}\n\n**{outcome}**") };
+    let _ = client.update_card(&action.message_id, &feishu::card(title, tone, &body, None, None)).await;
+
+    let msg = Incoming {
+        event_key: action.event_key.clone(),
+        message_id: action.message_id.clone(),
+        chat_id: action.chat_id.clone(),
+        chat_type: String::new(),
+        sender_id: action.operator_id.clone(),
+        sender_name: None,
+        text: String::new(),
+        mentioned_bot: true,
+        resources: vec![],
+        unsupported: None,
+    };
+    let text = if approve { "确认" } else { "取消" };
+    start_run(pool, channel, client, &msg, &mut conv, text.to_string(), Received::default()).await
 }
 
 async fn start_run(
@@ -245,6 +460,7 @@ async fn start_run(
     msg: &Incoming,
     conv: &mut Conversation,
     text: String,
+    received: Received,
 ) -> anyhow::Result<()> {
     let owner = channel.owner_id.as_str();
     // 当前对话不存在（例如在网页上删掉了）时换新会话
@@ -268,6 +484,9 @@ async fn start_run(
         mode: Some(conv.mode),
         timezone: Some(channel.config.timezone.clone()),
         resume,
+        attachments: (!received.attachments.is_empty()).then_some(received.attachments),
+        file_refs: (!received.file_refs.is_empty()).then_some(received.file_refs),
+        im_target: Some(ImTarget { channel_id: channel.id.clone(), chat_id: msg.chat_id.clone() }),
         ..Default::default()
     };
     conv.session_id = Some(session_id.clone());
@@ -278,8 +497,47 @@ async fn start_run(
         Err(e) => return reply_text(client, msg, &format!("没能开始运行：{e}")).await,
     };
     let card_id = reply_card(client, msg, &format!("处理中 · {}模式", mode_label(conv.mode)), Tone::Running, "收到，正在处理…").await?;
-    tokio::spawn(pump(channel.clone(), client.clone(), msg.clone(), conv.id.clone(), started.task_id, started.session_id, card_id));
+    tokio::spawn(pump(Job {
+        owner: owner.to_string(),
+        client: client.clone(),
+        target: Target::Reply(msg.message_id.clone()),
+        conversation_id: Some(conv.id.clone()),
+        task_id: started.task_id,
+        session_id: started.session_id,
+        card_id,
+        label: None,
+    }));
     Ok(())
+}
+
+/// 定时任务开始运行后，把进度和结果推到设置好的 IM 会话
+pub async fn push_schedule_run(target: ImTarget, owner_id: String, schedule_name: String, task_id: String, session_id: String) {
+    let pool = crate::state::db_pool();
+    let channel = match super::find_channel(&pool, &target.channel_id).await {
+        Ok(Some(c)) if c.enabled && c.owner_id == owner_id => c,
+        _ => return,
+    };
+    let client = feishu::Client::new(&channel);
+    let label = format!("定时任务 · {schedule_name}");
+    let card = feishu::card(&format!("{label} · 运行中"), Tone::Running, "开始运行…", None, None);
+    let card_id = match client.send(&target.chat_id, "interactive", &card).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!("[IM] 推送定时任务失败：{e:#}");
+            return;
+        }
+    };
+    pump(Job {
+        owner: owner_id,
+        client,
+        target: Target::Chat(target.chat_id),
+        conversation_id: None,
+        task_id,
+        session_id,
+        card_id,
+        label: Some(label),
+    })
+    .await;
 }
 
 // ───────────────────────── 进度回推 ─────────────────────────
@@ -414,17 +672,43 @@ impl Progress {
     }
 }
 
-async fn pump(
-    channel: Channel,
+/// 待确认计划的文字版：按钮点击后更新卡片时保留计划内容
+static PLANS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(Default::default);
+
+/// 消息发到哪里：回复某条消息，或直接发到会话
+#[derive(Clone)]
+enum Target {
+    Reply(String),
+    Chat(String),
+}
+
+impl Target {
+    async fn post(&self, client: &feishu::Client, msg_type: &str, content: &Value) -> anyhow::Result<String> {
+        match self {
+            Target::Reply(message_id) => client.reply(message_id, msg_type, content).await,
+            Target::Chat(chat_id) => client.send(chat_id, msg_type, content).await,
+        }
+    }
+}
+
+struct Job {
+    owner: String,
     client: feishu::Client,
-    msg: Incoming,
-    conversation_id: String,
+    target: Target,
+    /// IM 会话（定时任务推送时没有）：记录待确认的计划
+    conversation_id: Option<String>,
     task_id: String,
     session_id: String,
     card_id: String,
-) {
-    let owner = channel.owner_id.clone();
-    let Some((history, mut rx, _)) = crate::tasks::subscribe(&task_id, &owner, 0) else { return };
+    /// 卡片标题前缀（定时任务名称）
+    label: Option<String>,
+}
+
+async fn pump(job: Job) {
+    let Job { owner, client, target, conversation_id, task_id, session_id, card_id, label } = job;
+    // 后台订阅：IM 回推不算网页上有人在看，完成时照常发网页通知
+    let Some((history, mut rx, _guard)) = crate::tasks::subscribe_background(&task_id, &owner) else { return };
+    let title = |t: &str| label.as_ref().map(|l| format!("{l} · {t}")).unwrap_or_else(|| t.to_string());
     let started = Instant::now();
     let mut progress = Progress::default();
     for ev in &history {
@@ -441,7 +725,7 @@ async fn pump(
             },
             _ = ticker.tick() => {
                 if dirty && !card_id.is_empty() {
-                    let card = feishu::card("处理中", Tone::Running, &progress.running_body(), Some("发送 /stop 可以停止"), None);
+                    let card = feishu::card(&title("处理中"), Tone::Running, &progress.running_body(), Some("发送 /stop 可以停止"), None);
                     if let Err(e) = client.update_card(&card_id, &card).await {
                         tracing::debug!("[IM] 更新进度卡片失败：{e:#}");
                     }
@@ -459,56 +743,66 @@ async fn pump(
     let steps = progress.steps_markdown();
     let with_steps = |body: &str| if steps.is_empty() { body.to_string() } else { format!("{steps}\n\n{body}") };
 
-    let mut files: Vec<Artifact> = Vec::new();
+    let mut files: Vec<crate::file_store::RenderedFile> = Vec::new();
     let card = match (&progress.finished, &progress.error) {
         (Some(done), _) if done.get("awaiting_approval").and_then(Value::as_bool) == Some(true) => {
             let (run_id, plan) = progress.plan.clone().unwrap_or_default();
-            // 记下待确认的计划：下一条消息就是对它的回复
-            if let Ok(mut conv) = find_conversation(&pool, &conversation_id).await {
-                conv.pending_run_id = (!run_id.is_empty()).then_some(run_id);
-                let _ = super::save_conversation(&pool, &conv).await;
+            // 记下待确认的计划：下一条消息或按钮就是对它的回复
+            if let Some(conversation_id) = &conversation_id {
+                if let Ok(mut conv) = find_conversation(&pool, conversation_id).await {
+                    conv.pending_run_id = (!run_id.is_empty()).then(|| run_id.clone());
+                    let _ = super::save_conversation(&pool, &conv).await;
+                }
             }
-            let body = format!("{plan}\n\n回复 **确认** 开始执行，回复 **取消** 放弃，或者直接回复修改意见。");
-            feishu::card("计划待确认", Tone::Warning, &body, Some(&note), link_button)
+            PLANS.lock().unwrap().insert(run_id.clone(), plan.clone());
+            let body = format!("{plan}\n\n点 **确认执行** 开始，点 **取消** 放弃；也可以直接回复修改意见。");
+            let buttons = vec![
+                feishu::callback_button("确认执行", true, json!({ "kind": "plan", "decision": "approve", "run_id": run_id })),
+                feishu::callback_button("取消", false, json!({ "kind": "plan", "decision": "reject", "run_id": run_id })),
+            ];
+            feishu::card_with_buttons(&title("计划待确认"), Tone::Warning, &body, Some(&note), link_button, buttons)
         }
         (Some(done), _) if done.get("cancelled").and_then(Value::as_bool) == Some(true) => {
-            feishu::card("已停止", Tone::Neutral, &with_steps("任务已停止"), Some(&note), link_button)
+            feishu::card(&title("已停止"), Tone::Neutral, &with_steps("任务已停止"), Some(&note), link_button)
         }
         (Some(done), _) => {
-            files = done
+            let artifacts = done
                 .get("new_artifacts")
                 .and_then(|a| serde_json::from_value::<Vec<Artifact>>(a.clone()).ok())
                 .unwrap_or_default();
+            for artifact in &artifacts {
+                // 没有专门格式的产物（图表、搜索结果等）渲染成 JSON，发到 IM 没有意义
+                if let Some(file) = crate::file_store::render_artifact_file(&owner, artifact).await {
+                    if file.mime != "application/json" {
+                        files.push(file);
+                    }
+                }
+            }
             let summary = done.get("summary").and_then(Value::as_str).unwrap_or_default();
-            let mut body = with_steps(&feishu::truncate(summary.trim(), 3500));
+            let mut body = with_steps(&feishu::truncate(&feishu::flatten_tables(summary.trim()), 3500));
             if !files.is_empty() {
                 body.push_str(&format!("\n\n**生成了 {} 个文件**，马上发给你", files.len()));
             }
-            feishu::card("已完成", Tone::Success, &body, Some(&note), link_button)
+            feishu::card(&title("已完成"), Tone::Success, &body, Some(&note), link_button)
         }
-        (None, Some(error)) => feishu::card("运行失败", Tone::Failed, &with_steps(error), Some(&note), link_button),
-        (None, None) => feishu::card("连接中断", Tone::Neutral, "没能拿到运行结果，请在网页上查看", Some(&note), link_button),
+        (None, Some(error)) => feishu::card(&title("运行失败"), Tone::Failed, &with_steps(error), Some(&note), link_button),
+        (None, None) => feishu::card(&title("连接中断"), Tone::Neutral, "没能拿到运行结果，请在网页上查看", Some(&note), link_button),
     };
     let updated = if card_id.is_empty() { Err(anyhow::anyhow!("没有进度卡片")) } else { client.update_card(&card_id, &card).await };
     if let Err(e) = updated {
         tracing::warn!("[IM] 更新结果卡片失败，改为发新消息：{e:#}");
-        let _ = client.reply(&msg.message_id, "interactive", &card).await;
+        let _ = target.post(&client, "interactive", &card).await;
     }
 
-    for artifact in files {
-        let Some(file) = crate::file_store::render_artifact_file(&owner, &artifact).await else { continue };
-        // 没有专门格式的产物（搜索结果等）渲染成 JSON，发到 IM 没有意义
-        if file.mime == "application/json" {
-            continue;
-        }
+    for file in files {
         let name = file.name.clone();
         let sent = match client.upload(&file.name, &file.mime, file.bytes).await {
-            Ok((msg_type, content)) => client.reply(&msg.message_id, &msg_type, &content).await.map(|_| ()),
+            Ok((msg_type, content)) => target.post(&client, &msg_type, &content).await.map(|_| ()),
             Err(e) => Err(e),
         };
         if let Err(e) = sent {
             tracing::warn!("[IM] 发送文件 {name} 失败：{e:#}");
-            let _ = client.reply(&msg.message_id, "text", &json!({ "text": format!("文件「{name}」发送失败：{e}") })).await;
+            let _ = target.post(&client, "text", &json!({ "text": format!("文件「{name}」发送失败：{e}") })).await;
         }
     }
 }
@@ -567,6 +861,17 @@ mod tests {
         }
         assert!(!allow("test-key"));
         assert!(allow("other-key"));
+    }
+
+    #[test]
+    fn stash_collects_until_taken() {
+        let received = |name: &str| Received { attachments: vec![], file_refs: vec![format!("id-{name}")], names: vec![name.into()] };
+        assert_eq!(stash("conv-x", received("a.xlsx")), 1);
+        assert_eq!(stash("conv-x", received("b.pdf")), 2);
+        let taken = take_stash("conv-x");
+        assert_eq!(taken.names, ["a.xlsx", "b.pdf"]);
+        assert_eq!(taken.file_refs, ["id-a.xlsx", "id-b.pdf"]);
+        assert!(take_stash("conv-x").is_empty(), "取走后清空");
     }
 
     #[test]

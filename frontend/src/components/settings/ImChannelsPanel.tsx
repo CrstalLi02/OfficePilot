@@ -54,12 +54,12 @@ function Guide() {
           <li>在飞书开放平台创建「企业自建应用」，在「添加应用能力」里添加「机器人」。</li>
           <li>
             「权限管理」开通：<code>im:message</code>、<code>im:message:send_as_bot</code>、<code>im:message.p2p_msg:readonly</code>、
-            <code>im:message.group_at_msg:readonly</code>、<code>im:resource</code>。
+            <code>im:message.group_at_msg:readonly</code>、<code>im:resource</code>（收发图片和文件）、<code>im:chat:readonly</code>（读取群名，可选）。
           </li>
           <li>把「凭证与基础信息」里的 App ID、App Secret 填到下面并保存，等状态变成「已连接」。</li>
           <li>
             「事件与回调」→ 订阅方式选「使用长连接接收事件」（必须先在这里连上才能保存），然后添加事件
-            <code>im.message.receive_v1</code>（接收消息）。
+            <code>im.message.receive_v1</code>（接收消息）；在「回调配置」里同样选长连接，添加 <code>card.action.trigger</code>（卡片按钮，用于一键确认计划）。
           </li>
           <li>创建版本并发布，审核通过后在飞书里搜索机器人。</li>
           <li>点「生成绑定码」，在飞书里给机器人发送「绑定 123456」，之后就能直接让它干活。</li>

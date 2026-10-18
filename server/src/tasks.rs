@@ -50,6 +50,8 @@ struct Entry {
     next_seq: u64,
     finished: bool,
     tx: broadcast::Sender<TaskEvent>,
+    /// 后台订阅者（IM 回推等）数量：不算“有人在看”
+    background: usize,
 }
 
 static TASKS: Lazy<Mutex<HashMap<String, Arc<Mutex<Entry>>>>> = Lazy::new(Default::default);
@@ -86,9 +88,10 @@ impl TaskSink {
         }
     }
 
-    /// 当前是否有人在看（订阅数），用于决定完成时要不要发通知
+    /// 当前是否有人在看（网页订阅数，不含后台订阅），用于决定完成时要不要发通知
     pub fn watchers(&self) -> usize {
-        self.entry.lock().unwrap().tx.receiver_count()
+        let entry = self.entry.lock().unwrap();
+        entry.tx.receiver_count().saturating_sub(entry.background)
     }
 }
 
@@ -155,6 +158,7 @@ pub async fn create(
         next_seq: 1,
         finished: false,
         tx,
+        background: 0,
     }));
     {
         let mut tasks = TASKS.lock().unwrap();
@@ -220,6 +224,35 @@ pub fn subscribe(task_id: &str, owner_id: &str, after: u64) -> Option<(Vec<TaskE
     }
     let backlog = entry.events.iter().filter(|e| e.seq > after).cloned().collect();
     Some((backlog, entry.tx.subscribe(), entry.finished))
+}
+
+/// 后台订阅的凭据：持有期间不计入“有人在看”，丢弃时自动注销
+pub struct BackgroundGuard {
+    entry: Arc<Mutex<Entry>>,
+}
+
+impl Drop for BackgroundGuard {
+    fn drop(&mut self) {
+        let mut entry = self.entry.lock().unwrap();
+        entry.background = entry.background.saturating_sub(1);
+    }
+}
+
+/// 后台订阅（IM 回推进度等）：和 subscribe 一样，但不影响完成通知
+pub fn subscribe_background(
+    task_id: &str,
+    owner_id: &str,
+) -> Option<(Vec<TaskEvent>, broadcast::Receiver<TaskEvent>, BackgroundGuard)> {
+    let shared = TASKS.lock().unwrap().get(task_id)?.clone();
+    let mut entry = shared.lock().unwrap();
+    if entry.owner_id != owner_id {
+        return None;
+    }
+    entry.background += 1;
+    let backlog = entry.events.clone();
+    let rx = entry.tx.subscribe();
+    drop(entry);
+    Some((backlog, rx, BackgroundGuard { entry: shared }))
 }
 
 /// 接收端落后太多（广播缓冲溢出）时，从回放缓冲补齐

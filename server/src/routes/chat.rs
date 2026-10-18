@@ -508,7 +508,8 @@ pub async fn start_chat_task(
     )
     .with_tool_config(req.tool_config.clone().unwrap_or(serde_json::json!({})))
     .with_prior_artifacts(existing_artifacts.clone())
-    .with_timezone(req.timezone.clone());
+    .with_timezone(req.timezone.clone())
+    .with_im_target(req.im_target.clone());
 
     let session_id_for_save = session_id.clone();
     let pool_for_save = pool.clone();
@@ -743,8 +744,7 @@ pub async fn start_chat_task(
         if final_status == "failed" && final_summary.is_none() {
             sink.emit("error", serde_json::json!({ "message": final_error.clone().unwrap_or_default() }));
         }
-        // IM 发起的任务由 IM 订阅回推，不算网页上有人在看
-        let unwatched = sink.watchers() == 0 || origin == crate::tasks::Origin::Im;
+        let unwatched = sink.watchers() == 0;
         crate::tasks::finish(&pool_for_save, &sink, final_status, final_summary.as_deref(), final_error.as_deref()).await;
         // 没有页面在看时（关掉了页面、定时任务、IM），完成后发通知
         if unwatched && final_status != "cancelled" {

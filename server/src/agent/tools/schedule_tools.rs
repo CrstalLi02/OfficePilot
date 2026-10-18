@@ -43,6 +43,9 @@ impl OfficeTool for ScheduleCreateTool {
             Err(e) => return ToolResult::err(format!("参数不正确：{e}")),
         };
         schedule_input.timezone = ctx.timezone.clone().or(schedule_input.timezone);
+        // 推送目标只取自服务端：在飞书里创建的定时任务，结果推回这个飞书会话
+        schedule_input.notify = ctx.im_target.clone();
+        let pushes_to_im = schedule_input.notify.is_some();
         match schedules::create(&crate::state::db_pool(), &ctx.user_id, &schedule_input).await {
             Ok(s) => {
                 let next: Vec<String> = schedules::parse(&s.cron, &s.timezone)
@@ -55,11 +58,12 @@ impl OfficeTool for ScheduleCreateTool {
                     .unwrap_or_default();
                 ToolResult::ok(
                     format!(
-                        "已创建定时任务《{}》：{}（时区 {}），接下来三次运行：{}。用户可以在“后台任务 → 定时任务”里停用、修改或立即运行。",
+                        "已创建定时任务《{}》：{}（时区 {}），接下来三次运行：{}。{}用户可以在“后台任务 → 定时任务”里停用、修改或立即运行。",
                         s.name,
                         s.description,
                         s.timezone,
-                        next.join("、")
+                        next.join("、"),
+                        if pushes_to_im { "每次运行的进度和结果会推送到当前这个飞书会话。" } else { "" }
                     ),
                     vec![],
                 )

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlarmClock, Loader2, Pencil, Play, Plus, Trash2 } from 'lucide-react'
-import { browserTimezone, schedulesApi, type Schedule, type ScheduleInput } from '@/api'
+import { browserTimezone, imApi, schedulesApi, type ImTarget, type Schedule, type ScheduleInput } from '@/api'
 
 interface SchedulesPanelProps {
   onOpenSession: (sessionId: string) => void
@@ -22,6 +22,17 @@ interface Draft {
   mode: 'craft' | 'ask'
   session_strategy: 'new' | 'same'
   enabled: boolean
+  /** 推送目标 "channel_id|chat_id"，空表示不推送 */
+  notify: string
+  /** 编辑已有任务时保留它的时区与技能；新建时用浏览器时区 */
+  timezone?: string
+  skills?: string[]
+}
+
+const targetKey = (t?: ImTarget | null) => (t ? `${t.channel_id}|${t.chat_id}` : '')
+const parseTarget = (key: string): ImTarget | null => {
+  const [channel_id, chat_id] = key.split('|')
+  return channel_id && chat_id ? { channel_id, chat_id } : null
 }
 
 const WEEKDAYS = [
@@ -46,6 +57,7 @@ const EMPTY: Draft = {
   mode: 'craft',
   session_strategy: 'new',
   enabled: true,
+  notify: '',
 }
 
 /** 频率选项 → 5 段 cron */
@@ -69,7 +81,7 @@ function toCron(d: Draft): string {
 
 /** 已有定时任务 → 表单（常见写法还原成频率选项，其余显示为自定义 cron） */
 function fromSchedule(s: Schedule): Draft {
-  const base: Draft = { ...EMPTY, id: s.id, name: s.name, prompt: s.prompt, cron: s.cron, mode: s.mode === 'ask' ? 'ask' : 'craft', session_strategy: s.session_strategy, enabled: s.enabled, frequency: 'custom' }
+  const base: Draft = { ...EMPTY, id: s.id, name: s.name, prompt: s.prompt, cron: s.cron, mode: s.mode === 'ask' ? 'ask' : 'craft', session_strategy: s.session_strategy, enabled: s.enabled, notify: targetKey(s.notify), timezone: s.timezone, skills: s.skills, frequency: 'custom' }
   const [min, hour, dom, mon, dow] = s.cron.split(/\s+/)
   const isNum = (x?: string) => !!x && /^\d+$/.test(x)
   if (mon !== '*') return base
@@ -98,11 +110,14 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
   const [preview, setPreview] = useState<{ description: string; next_runs: string[] } | null>(null)
   const [previewError, setPreviewError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const [targets, setTargets] = useState<Array<ImTarget & { label: string }>>([])
   const timezone = useMemo(() => browserTimezone(), [])
+  const draftTimezone = draft?.timezone || timezone
 
   const reload = () => schedulesApi.list().then(({ data }) => setSchedules(data.schedules)).catch(() => setSchedules([]))
   useEffect(() => {
     reload()
+    imApi.targets().then(({ data }) => setTargets(data.targets)).catch(() => setTargets([]))
   }, [])
 
   // 表单变化时实时预览接下来的触发时间
@@ -111,7 +126,7 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
     if (!draft) return
     const timer = window.setTimeout(() => {
       schedulesApi
-        .preview(cron, timezone)
+        .preview(cron, draftTimezone)
         .then(({ data }) => {
           setPreview(data)
           setPreviewError('')
@@ -122,11 +137,11 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
         })
     }, 300)
     return () => window.clearTimeout(timer)
-  }, [cron, draft !== null, timezone])
+  }, [cron, draft !== null, draftTimezone])
 
   const save = async () => {
     if (!draft) return
-    const input: ScheduleInput = { name: draft.name, prompt: draft.prompt, cron, timezone, mode: draft.mode, session_strategy: draft.session_strategy, enabled: draft.enabled }
+    const input: ScheduleInput = { name: draft.name, prompt: draft.prompt, cron, timezone: draftTimezone, skills: draft.skills, mode: draft.mode, session_strategy: draft.session_strategy, enabled: draft.enabled, notify: parseTarget(draft.notify) }
     setBusy('save')
     try {
       if (draft.id) await schedulesApi.update(draft.id, input)
@@ -144,7 +159,7 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
   const toggle = async (s: Schedule) => {
     setBusy(s.id)
     try {
-      await schedulesApi.update(s.id, { name: s.name, prompt: s.prompt, cron: s.cron, timezone: s.timezone, mode: s.mode, skills: s.skills, session_strategy: s.session_strategy, enabled: !s.enabled })
+      await schedulesApi.update(s.id, { name: s.name, prompt: s.prompt, cron: s.cron, timezone: s.timezone, mode: s.mode, skills: s.skills, session_strategy: s.session_strategy, enabled: !s.enabled, notify: s.notify ? { channel_id: s.notify.channel_id, chat_id: s.notify.chat_id } : null })
       reload()
     } catch (err) {
       onToast?.(errorText(err), 'error')
@@ -255,7 +270,7 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
           )}
         </div>
         <div className={`rounded-lg px-2 py-1.5 text-[11px] ${previewError ? 'bg-red-50 text-red-600' : 'bg-surface-50 text-surface-600'}`}>
-          {previewError || (preview ? `${preview.description}（${timezone || '默认时区'}）· 接下来：${preview.next_runs.slice(0, 3).join('、')}` : '正在计算…')}
+          {previewError || (preview ? `${preview.description}（${draftTimezone || '默认时区'}）· 接下来：${preview.next_runs.slice(0, 3).join('、')}` : '正在计算…')}
         </div>
         <div className="flex flex-wrap gap-3 text-[11px] text-surface-600">
           <label className="flex items-center gap-1">
@@ -272,6 +287,17 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
               <option value="same">写入同一个会话</option>
             </select>
           </label>
+          {(targets.length > 0 || draft.notify) && (
+            <label className="flex items-center gap-1">
+              完成后推送到
+              <select className="max-w-[12rem] rounded border border-black/[0.08] px-1 py-0.5" value={draft.notify} onChange={(e) => set({ notify: e.target.value })}>
+                <option value="">不推送</option>
+                {targets.map((t) => (
+                  <option key={targetKey(t)} value={targetKey(t)}>{t.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex items-center gap-1">
             <input type="checkbox" className="accent-surface-900" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
             启用
@@ -312,6 +338,7 @@ export function SchedulesPanel({ onOpenSession, onToast }: SchedulesPanelProps) 
               <div className="truncate text-xs font-medium text-surface-800">{s.name}</div>
               <div className="mt-0.5 text-[11px] text-surface-500">
                 {s.description}{s.timezone && s.timezone !== timezone ? `（${s.timezone}）` : ''} · {s.mode === 'ask' ? '问答' : '执行'} · {s.session_strategy === 'same' ? '同一会话' : '每次新会话'}
+                {s.notify && ` · 推送到 ${s.notify.label}`}
               </div>
               <div className="mt-0.5 text-[11px] text-surface-400">
                 下次：{s.enabled ? when(s.next_run_at) : '已停用'} · 上次：{when(s.last_run_at)}

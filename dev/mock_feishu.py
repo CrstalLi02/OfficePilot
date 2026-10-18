@@ -6,7 +6,9 @@
 - 长连接：POST /callback/ws/endpoint 返回 ws 地址，/ws 上按 pbbp2.Frame 收发（ping/pong、事件、ACK）
 - 测试控制：
     POST /mock/send   {"text": "...", "chat_id": "oc_1", "chat_type": "p2p", "sender": "ou_user", "mention": false, "fragments": 1}
-                      通过长连接推送一条 im.message.receive_v1 事件
+                      通过长连接推送一条 im.message.receive_v1 事件；msg_type=image/file 时用 content 指定 image_key / file_key
+    POST /mock/card   {"value": {...}, "message_id": "om_bot_3", "chat_id": "oc_1", "operator": "ou_user"}
+                      推送一次卡片按钮回调（card.action.trigger）
     GET  /mock/log    机器人发出的所有调用（回复、卡片更新、上传）以及收到的 ACK
     POST /mock/reset  清空记录
 
@@ -211,6 +213,32 @@ async def push_event(body):
     return {"clients": len(CLIENTS), "event_id": event_id, "message_id": message_id}
 
 
+async def push_card_action(body):
+    event_id = "ev_" + uuid.uuid4().hex[:12]
+    event = {
+        "schema": "2.0",
+        "header": {"event_id": event_id, "event_type": "card.action.trigger", "token": "", "app_id": "cli_mock"},
+        "event": {
+            "operator": {"open_id": body.get("operator", "ou_user")},
+            "action": {"tag": "button", "value": body.get("value", {})},
+            "context": {"open_message_id": body.get("message_id", ""), "open_chat_id": body.get("chat_id", "oc_1")},
+        },
+    }
+    frame = encode_frame(1, {"type": "event", "message_id": "fm_" + uuid.uuid4().hex[:8], "sum": "1", "seq": "0"}, json.dumps(event).encode())
+    for writer in list(CLIENTS):
+        await ws_send(writer, frame)
+    return {"clients": len(CLIENTS), "event_id": event_id}
+
+
+# 消息里的资源：image_key / file_key 前缀决定返回什么
+PNG_1PX = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+CSV_SALES = "月份,区域,销售额\n1月,华东,120\n1月,华南,90\n2月,华东,150\n2月,华南,110\n3月,华东,170\n3月,华南,95\n".encode()
+
+
+def binary(writer, content_type, data):
+    writer.write(f"HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {len(data)}\r\nConnection: close\r\n\r\n".encode() + data)
+
+
 # ───────────── HTTP ─────────────
 
 def respond(writer, status, obj):
@@ -260,6 +288,8 @@ async def handle(reader, writer):
         if path.startswith("/mock/"):
             if path == "/mock/send":
                 return respond(writer, 200, await push_event(data))
+            if path == "/mock/card":
+                return respond(writer, 200, await push_card_action(data))
             if path == "/mock/log":
                 return respond(writer, 200, {"log": LOG, "clients": len(CLIENTS)})
             if path == "/mock/reset":
@@ -269,6 +299,16 @@ async def handle(reader, writer):
             return respond(writer, 200, {"code": 99991663, "msg": "invalid access token"})
         if path == "/open-apis/bot/v3/info":
             return respond(writer, 200, {"code": 0, "bot": {"app_name": "模拟助手", "open_id": BOT_OPEN_ID}})
+        if path.startswith("/open-apis/im/v1/chats/"):
+            return respond(writer, 200, {"code": 0, "data": {"name": "模拟项目群", "chat_id": path.rsplit("/", 1)[1]}})
+        if path.startswith("/open-apis/im/v1/messages") and "/resources/" in path:
+            key = path.rsplit("/", 1)[1]
+            record("download", key=key, query=target.split("?", 1)[1] if "?" in target else "")
+            if key.startswith("missing"):
+                return respond(writer, 404, {"code": 234003, "msg": "File not in msg."})
+            if key.startswith("img"):
+                return binary(writer, "image/png", PNG_1PX)
+            return binary(writer, "application/octet-stream", CSV_SALES)
         if path.startswith("/open-apis/im/v1/messages"):
             parts = path.split("/")
             if method == "POST" and path.endswith("/reply"):

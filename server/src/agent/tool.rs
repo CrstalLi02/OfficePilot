@@ -27,6 +27,8 @@ pub struct ToolContext {
     pub call_id: Option<String>,
     /// 用户时区（IANA 名称），未提供时为 None
     pub timezone: Option<String>,
+    /// 从 IM 会话发起时的会话位置（例如在飞书里创建的定时任务结果推回这个会话）
+    pub im_target: Option<crate::im::ImTarget>,
 }
 
 impl ToolContext {
@@ -50,7 +52,13 @@ impl ToolContext {
             tool_config: None,
             call_id: None,
             timezone: None,
+            im_target: None,
         }
+    }
+
+    pub fn with_im_target(mut self, target: Option<crate::im::ImTarget>) -> Self {
+        self.im_target = target;
+        self
     }
 
     pub fn with_timezone(mut self, timezone: Option<String>) -> Self {

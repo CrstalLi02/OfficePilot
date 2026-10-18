@@ -126,6 +126,8 @@ pub struct Schedule {
     pub last_run_at: Option<String>,
     pub last_task_id: Option<String>,
     pub created_at: String,
+    /// 推送目标：{ channel_id, chat_id, label }
+    pub notify: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,6 +146,9 @@ pub struct ScheduleInput {
     pub session_strategy: Option<String>,
     #[serde(default)]
     pub enabled: Option<bool>,
+    /// 运行结果推送到的 IM 会话；不传或 null 表示不推送
+    #[serde(default)]
+    pub notify: Option<crate::im::ImTarget>,
 }
 
 struct Validated {
@@ -210,7 +215,16 @@ fn row_to_schedule(row: &sqlx::any::AnyRow) -> AppResult<Schedule> {
         last_run_at: text_column(row, 11)?,
         last_task_id: text_column(row, 12)?,
         created_at: text_column(row, 13)?.unwrap_or_default(),
+        notify: None,
     })
+}
+
+/// 补上推送目标
+async fn with_notify(pool: &DbPool, mut schedule: Schedule) -> Schedule {
+    schedule.notify = crate::im::schedule_target(pool, &schedule.id)
+        .await
+        .map(|(t, label)| json!({ "channel_id": t.channel_id, "chat_id": t.chat_id, "label": label }));
+    schedule
 }
 
 pub async fn list(pool: &DbPool, owner_id: &str) -> AppResult<Vec<Schedule>> {
@@ -218,7 +232,11 @@ pub async fn list(pool: &DbPool, owner_id: &str) -> AppResult<Vec<Schedule>> {
         .bind(owner_id)
         .fetch_all(pool)
         .await?;
-    rows.iter().map(row_to_schedule).collect()
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        out.push(with_notify(pool, row_to_schedule(row)?).await);
+    }
+    Ok(out)
 }
 
 pub async fn get(pool: &DbPool, owner_id: &str, id: &str) -> AppResult<Option<Schedule>> {
@@ -227,7 +245,10 @@ pub async fn get(pool: &DbPool, owner_id: &str, id: &str) -> AppResult<Option<Sc
         .bind(owner_id)
         .fetch_optional(pool)
         .await?;
-    row.as_ref().map(row_to_schedule).transpose()
+    match row.as_ref().map(row_to_schedule).transpose()? {
+        Some(s) => Ok(Some(with_notify(pool, s).await)),
+        None => Ok(None),
+    }
 }
 
 pub async fn create(pool: &DbPool, owner_id: &str, input: &ScheduleInput) -> AppResult<Schedule> {
@@ -241,6 +262,7 @@ pub async fn create(pool: &DbPool, owner_id: &str, input: &ScheduleInput) -> App
     }
     let enabled = input.enabled.unwrap_or(true);
     let v = validate(input, enabled).map_err(bad)?;
+    crate::im::validate_target(pool, owner_id, input.notify.as_ref()).await?;
     let id = uuid::Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     sqlx::query(
@@ -262,6 +284,7 @@ pub async fn create(pool: &DbPool, owner_id: &str, input: &ScheduleInput) -> App
     .bind(&now)
     .execute(pool)
     .await?;
+    crate::im::set_schedule_target(pool, owner_id, &id, input.notify.as_ref()).await?;
     Ok(get(pool, owner_id, &id).await?.expect("just inserted"))
 }
 
@@ -269,6 +292,7 @@ pub async fn update(pool: &DbPool, owner_id: &str, id: &str, input: &ScheduleInp
     let current = get(pool, owner_id, id).await?.ok_or_else(|| AppError::NotFound("定时任务不存在".into()))?;
     let enabled = input.enabled.unwrap_or(current.enabled);
     let v = validate(input, enabled).map_err(bad)?;
+    crate::im::validate_target(pool, owner_id, input.notify.as_ref()).await?;
     // 改为写入同一个会话时沿用已有会话；改回每次新建时清空
     let session_id = if v.session_strategy == "same" { current.session_id.clone() } else { None };
     sqlx::query(
@@ -290,6 +314,7 @@ pub async fn update(pool: &DbPool, owner_id: &str, id: &str, input: &ScheduleInp
     .bind(owner_id)
     .execute(pool)
     .await?;
+    crate::im::set_schedule_target(pool, owner_id, id, input.notify.as_ref()).await?;
     Ok(get(pool, owner_id, id).await?.expect("exists"))
 }
 
@@ -301,6 +326,7 @@ pub async fn delete(pool: &DbPool, owner_id: &str, id: &str) -> AppResult<bool> 
         .await?;
     if result.rows_affected() > 0 {
         sqlx::query("DELETE FROM schedule_runs WHERE schedule_id = ?").bind(id).execute(pool).await?;
+        sqlx::query("DELETE FROM im_schedule_targets WHERE schedule_id = ?").bind(id).execute(pool).await?;
     }
     Ok(result.rows_affected() > 0)
 }
@@ -391,6 +417,16 @@ pub async fn trigger(pool: &DbPool, owner_id: &str, schedule: &Schedule) -> AppR
                 .execute(pool)
                 .await?;
             record_run(pool, &schedule.id, Some(&started.task_id), "started", None).await;
+            // 设置了推送目标：把进度和结果发到那个 IM 会话
+            if let Some((target, _)) = crate::im::schedule_target(pool, &schedule.id).await {
+                tokio::spawn(crate::im::router::push_schedule_run(
+                    target,
+                    owner_id.to_string(),
+                    schedule.name.clone(),
+                    started.task_id.clone(),
+                    session_id.clone(),
+                ));
+            }
             Ok(json!({ "status": "started", "task_id": started.task_id, "session_id": session_id }))
         }
         Err(e) => {
@@ -497,6 +533,7 @@ mod tests {
             skills: Some(vec!["weekly-report".into()]),
             session_strategy: None,
             enabled: None,
+            notify: None,
         }
     }
 
@@ -504,6 +541,8 @@ mod tests {
         sqlx::any::install_default_drivers();
         let pool = sqlx::any::AnyPoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
         sqlx::raw_sql(include_str!("../../migrations/007_schedules.sql")).execute(&pool).await.unwrap();
+        sqlx::raw_sql(include_str!("../../migrations/008_im.sql")).execute(&pool).await.unwrap();
+        sqlx::raw_sql(include_str!("../../migrations/009_im_push.sql")).execute(&pool).await.unwrap();
         pool
     }
 

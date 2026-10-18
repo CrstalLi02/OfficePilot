@@ -118,7 +118,8 @@ async fn register(Json(req): Json<RegisterRequest>) -> Result<Json<TokenResponse
     }
 
     let hash = user_repo::hash_password(&req.password)?;
-    let user = user_repo::create(&pool, &req.username, req.email.as_deref(), &hash).await?;
+    let email = req.email.as_deref().map(str::trim).filter(|e| !e.is_empty());
+    let user = user_repo::create(&pool, &req.username, email, &hash).await?;
     let token = crate::auth::create_token(&user)?;
 
     Ok(Json(TokenResponse {
