@@ -129,7 +129,7 @@ impl Sender {
                     .json(message)
                     .send()
                     .await
-                    .map_err(|e| McpError::Closed(e.to_string()))?;
+                    .map_err(|e| McpError::Closed(e.without_url().to_string()))?;
                 if !resp.status().is_success() {
                     return Err(transport(format!("HTTP {}", resp.status().as_u16())));
                 }
@@ -224,7 +224,7 @@ async fn connect_sse(url: &str, headers: HeaderMap) -> Result<StreamConn> {
         .header(ACCEPT, "text/event-stream")
         .send()
         .await
-        .map_err(|e| transport(format!("连接失败：{e}")))?;
+        .map_err(|e| transport(format!("连接失败：{}", e.without_url())))?;
     if !resp.status().is_success() {
         return Err(transport(format!("连接失败：HTTP {}", resp.status().as_u16())));
     }
@@ -236,7 +236,7 @@ async fn connect_sse(url: &str, headers: HeaderMap) -> Result<StreamConn> {
             .await
             .map_err(|_| McpError::Timeout(CONNECT_TIMEOUT.as_secs()))?
             .ok_or_else(|| transport("服务没有返回 endpoint 事件"))?
-            .map_err(transport)?;
+            .map_err(|e| transport(e.without_url()))?;
         let mut found = None;
         for (event, data) in parser.push(&String::from_utf8_lossy(&chunk)) {
             if event == "endpoint" && found.is_none() {
@@ -351,6 +351,33 @@ pub struct Session {
     next_id: AtomicU64,
     protocol: Mutex<String>,
     pub server_name: String,
+    /// 服务端声明的能力（tools / resources / prompts）
+    pub capabilities: Value,
+}
+
+/// 资源（或资源模板）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResourceInfo {
+    pub uri: String,
+    pub name: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub mime_type: Option<String>,
+    /// 资源模板（uri 里有 {变量}）
+    pub template: bool,
+}
+
+/// 提示词
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PromptInfo {
+    pub name: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub arguments: Vec<Value>,
+}
+
+fn opt_str(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
 fn rpc_result(message: Value) -> Result<Value> {
@@ -368,8 +395,14 @@ impl Session {
     pub async fn connect(server: &McpServer) -> Result<Session> {
         let conn = match server.transport.as_str() {
             "http" | "sse" => {
-                let url = server.url.clone().unwrap_or_default();
+                let mut url = server.url.clone().unwrap_or_default();
                 super::check_url(&url).await.map_err(transport)?;
+                // 放在查询参数里的密钥连接时才拼上（不存进地址、不出现在界面）
+                if !server.secrets.query.is_empty() {
+                    let mut parsed = reqwest::Url::parse(&url).map_err(transport)?;
+                    parsed.query_pairs_mut().extend_pairs(server.secrets.query.iter());
+                    url = parsed.to_string();
+                }
                 let headers = header_map(&server.secrets.headers)?;
                 if server.transport == "sse" {
                     Conn::Stream(connect_sse(&url, headers).await?)
@@ -385,7 +418,13 @@ impl Session {
             }
             other => return Err(transport(format!("不支持的传输方式：{other}"))),
         };
-        let mut session = Session { conn, next_id: AtomicU64::new(1), protocol: Mutex::new(PROTOCOL_VERSION.into()), server_name: String::new() };
+        let mut session = Session {
+            conn,
+            next_id: AtomicU64::new(1),
+            protocol: Mutex::new(PROTOCOL_VERSION.into()),
+            server_name: String::new(),
+            capabilities: Value::Null,
+        };
         let init = session
             .request(
                 "initialize",
@@ -401,6 +440,7 @@ impl Session {
             *session.protocol.lock().unwrap() = v.to_string();
         }
         session.server_name = init.pointer("/serverInfo/name").and_then(Value::as_str).unwrap_or_default().to_string();
+        session.capabilities = init.get("capabilities").cloned().unwrap_or_default();
         session.notify("notifications/initialized", json!({})).await?;
         Ok(session)
     }
@@ -478,7 +518,8 @@ impl Session {
         if let Some(sid) = http.session_id.lock().unwrap().clone() {
             req = req.header("Mcp-Session-Id", sid);
         }
-        req.json(message).send().await.map_err(|e| transport(format!("请求失败：{e}")))
+        // 错误信息不带地址：地址里可能有密钥参数
+        req.json(message).send().await.map_err(|e| transport(format!("请求失败：{}", e.without_url())))
     }
 
     async fn http_request(&self, http: &HttpConn, id: u64, message: &Value, initialize: bool) -> Result<Value> {
@@ -513,7 +554,7 @@ impl Session {
         let mut stream = resp.bytes_stream();
         let mut parser = SseParser::default();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| McpError::Closed(e.to_string()))?;
+            let chunk = chunk.map_err(|e| McpError::Closed(e.without_url().to_string()))?;
             for (_, data) in parser.push(&String::from_utf8_lossy(&chunk)) {
                 if let Ok(v) = serde_json::from_str::<Value>(&data) {
                     if matches(&v) {
@@ -544,6 +585,92 @@ impl Session {
             }
         }
         Ok(tools)
+    }
+
+    pub fn supports(&self, capability: &str) -> bool {
+        self.capabilities.get(capability).is_some_and(|v| !v.is_null())
+    }
+
+    /// 分页拉取某个列表
+    async fn list_all(&self, method: &str, field: &str) -> Result<Vec<Value>> {
+        let mut items = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..20 {
+            let params = match &cursor {
+                Some(c) => json!({ "cursor": c }),
+                None => json!({}),
+            };
+            let result = self.request(method, params, LIST_TIMEOUT).await?;
+            items.extend(result.get(field).and_then(Value::as_array).cloned().unwrap_or_default());
+            cursor = opt_str(&result, "nextCursor");
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(items)
+    }
+
+    /// 资源与资源模板（服务端没声明 resources 能力时返回空）
+    pub async fn list_resources(&self) -> Result<Vec<ResourceInfo>> {
+        if !self.supports("resources") {
+            return Ok(vec![]);
+        }
+        let mut out: Vec<ResourceInfo> = self
+            .list_all("resources/list", "resources")
+            .await?
+            .iter()
+            .filter_map(|v| {
+                Some(ResourceInfo {
+                    uri: opt_str(v, "uri")?,
+                    name: opt_str(v, "name").unwrap_or_default(),
+                    title: opt_str(v, "title"),
+                    description: opt_str(v, "description"),
+                    mime_type: opt_str(v, "mimeType"),
+                    template: false,
+                })
+            })
+            .collect();
+        // 有的服务端不支持模板列表，失败时忽略
+        if let Ok(templates) = self.list_all("resources/templates/list", "resourceTemplates").await {
+            out.extend(templates.iter().filter_map(|v| {
+                Some(ResourceInfo {
+                    uri: opt_str(v, "uriTemplate")?,
+                    name: opt_str(v, "name").unwrap_or_default(),
+                    title: opt_str(v, "title"),
+                    description: opt_str(v, "description"),
+                    mime_type: opt_str(v, "mimeType"),
+                    template: true,
+                })
+            }));
+        }
+        Ok(out)
+    }
+
+    pub async fn read_resource(&self, uri: &str) -> Result<Value> {
+        self.request("resources/read", json!({ "uri": uri }), LIST_TIMEOUT).await
+    }
+
+    pub async fn list_prompts(&self) -> Result<Vec<PromptInfo>> {
+        if !self.supports("prompts") {
+            return Ok(vec![]);
+        }
+        Ok(self
+            .list_all("prompts/list", "prompts")
+            .await?
+            .iter()
+            .filter_map(|v| {
+                Some(PromptInfo {
+                    name: opt_str(v, "name")?,
+                    title: opt_str(v, "title"),
+                    description: opt_str(v, "description"),
+                    arguments: v.get("arguments").and_then(Value::as_array).cloned().unwrap_or_default(),
+                })
+            })
+            .collect())
+    }
+
+    pub async fn get_prompt(&self, name: &str, arguments: Value) -> Result<Value> {
+        self.request("prompts/get", json!({ "name": name, "arguments": arguments }), LIST_TIMEOUT).await
     }
 
     pub async fn call_tool(&self, name: &str, arguments: Value, timeout: Duration) -> Result<Value> {

@@ -8,7 +8,9 @@ import { FilePickerPanel } from './FilePickerPanel'
 import type { AgentMode, AgentTraceEvent, Artifact, ChatAttachment, ChatMessage, InputRef, LLMProfile, PlanDecisionKind, PlanStep, PPTProject, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { findArtifactTurnGroup, groupArtifactsByTurn } from '@/lib/artifact-turns'
 import { ToolConfigDropdown } from './ToolConfigDropdown'
+import type { McpResource } from '@/api'
 import { RunTimeline } from './RunTimeline'
+import { ApprovalPrompt } from './ApprovalPrompt'
 import { PlanCard } from './PlanCard'
 import { SkillMenu } from './SkillMenu'
 import type { AgentRunState } from '@/lib/agent-run'
@@ -56,6 +58,8 @@ interface ChatPanelProps {
   onInsertArtifact: (artifact: Artifact, sessionId?: string) => void
   /** @ 引用工作区文件 */
   onInsertFileRef?: (file: WorkspaceFile) => void
+  /** @ 引用插件资源 */
+  onInsertResourceRef?: (resource: McpResource) => void
   /** 本轮选择的技能（输入框 / 菜单） */
   selectedSkills?: string[]
   onAddSkill?: (skill: SkillSummary) => void
@@ -350,6 +354,7 @@ export function ChatPanel({
   onExportArtifact,
   onInsertArtifact,
   onInsertFileRef,
+  onInsertResourceRef,
   selectedSkills = [],
   onAddSkill,
   onRemoveSkill,
@@ -796,6 +801,7 @@ export function ChatPanel({
                 </div>
               </button>
 
+              <ApprovalPrompt run={runState} />
               {processPanelExpanded && <RunTimeline run={runState} isStreaming={isStreaming} />}
 
               {/* 执行步骤日志 — 逐行流式 */}
@@ -1021,6 +1027,11 @@ export function ChatPanel({
                     setShowSkillMenu(false)
                     onOpenSkills?.()
                   }}
+                  onUsePrompt={(text) => {
+                    setShowSkillMenu(false)
+                    onInputChange(input ? `${input}\n${text}` : text)
+                    window.setTimeout(() => textareaRef.current?.focus(), 50)
+                  }}
                   onClose={() => setShowSkillMenu(false)}
                 />
               )}
@@ -1030,6 +1041,15 @@ export function ChatPanel({
                   historyArtifacts={historyArtifacts}
                   onSelect={handleFilePickerSelect}
                   onSelectFile={onInsertFileRef ? handleFilePickerSelectFile : undefined}
+                  onSelectResource={
+                    onInsertResourceRef
+                      ? (resource) => {
+                          setShowFilePicker(false)
+                          onInsertResourceRef(resource)
+                          window.setTimeout(() => textareaRef.current?.focus(), 50)
+                        }
+                      : undefined
+                  }
                   onClose={() => setShowFilePicker(false)}
                 />
               )}

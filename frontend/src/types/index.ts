@@ -32,6 +32,8 @@ export interface InputRef {
   contentSummary?: string;
   /** 引用的是工作区文件时的文件 id（发送时作为 file_refs 传给后端） */
   fileId?: string;
+  /** 引用的是插件资源时的位置（发送时作为 mcp_resources 传给后端） */
+  mcpResource?: { server_id: string; uri: string; name: string };
 }
 
 /** 技能（Agent Skills） */

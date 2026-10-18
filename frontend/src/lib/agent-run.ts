@@ -18,6 +18,18 @@ export interface ToolRun {
   opId?: string
   /** 一句话结果，如“整理了 5 项” */
   summary?: string
+  /** 调用前确认（插件的写操作等） */
+  approval?: ToolApproval
+}
+
+export interface ToolApproval {
+  id: string
+  source: string
+  label: string
+  reason: string
+  arguments: unknown
+  expiresAt: number
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled'
 }
 
 export interface AgentRunState {
@@ -102,6 +114,33 @@ export function applyRunEvent(state: AgentRunState, event: string, data: any, no
       }
     }
 
+    case 'tool_approval':
+      if (!callId) return state
+      return {
+        ...state,
+        tools: upsert(state.tools, callId, (prev) => ({
+          ...(prev ?? { callId, tool: data.tool, status: 'running', startedAt: now }),
+          approval: {
+            id: String(data.approval_id),
+            source: data.source || '',
+            label: data.label || data.tool,
+            reason: data.reason || '',
+            arguments: data.arguments,
+            expiresAt: Date.parse(data.expires_at) || now + 600_000,
+            status: 'pending',
+          },
+        })),
+      }
+
+    case 'tool_approval_resolved':
+      if (!callId) return state
+      return {
+        ...state,
+        tools: state.tools.map((item) =>
+          item.callId === callId && item.approval ? { ...item, approval: { ...item.approval, status: data.decision || 'rejected' } } : item
+        ),
+      }
+
     case 'usage':
       return { ...state, usage: { prompt_tokens: data.prompt_tokens || 0, completion_tokens: data.completion_tokens || 0 } }
 
@@ -112,11 +151,14 @@ export function applyRunEvent(state: AgentRunState, event: string, data: any, no
         ...state,
         cancelled,
         usage: data?.usage && typeof data.usage === 'object' ? data.usage : state.usage,
-        tools: state.tools.map((item) =>
-          item.status === 'running' || item.status === 'pending'
-            ? { ...item, status: cancelled ? 'cancelled' : event === 'error' ? 'error' : item.status }
-            : item
-        ),
+        tools: state.tools.map((item): ToolRun => {
+          const next: ToolRun =
+            item.status === 'running' || item.status === 'pending'
+              ? { ...item, status: cancelled ? 'cancelled' : event === 'error' ? 'error' : item.status }
+              : item
+          // 运行结束时还没处理的确认一并失效
+          return next.approval?.status === 'pending' ? { ...next, approval: { ...next.approval, status: 'cancelled' } } : next
+        }),
       }
     }
 

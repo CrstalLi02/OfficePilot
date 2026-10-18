@@ -6,6 +6,7 @@
 - 旧版 SSE：GET /sse 建立事件流，POST /messages?session=… 发送请求
 - stdio：python3 dev/mock_mcp.py --stdio
 
+资源：两份文本笔记、一张图片（二进制）和一个资源模板；提示词：weekly_report、customer_email（带参数）。
 工具：get_weather（只读）、get_exchange_rate（只读，structuredContent）、render_badge（只读，返回图片）、
 create_ticket（写操作）、always_fail（返回错误）、read_note（返回带“指令”的外部文本，用于测试提示注入防护）。
 
@@ -72,6 +73,20 @@ TOOLS = [
     },
 ]
 
+RESOURCES = [
+    {"uri": "notes://meetings/2026-10-16", "name": "周例会纪要（10 月 16 日）", "mimeType": "text/markdown",
+     "text": "# 周例会纪要 2026-10-16\n\n- 官网改版：首页设计稿已定稿，开发进度 60%，预计 10/30 上线\n- 客户 A 续约：报价已发出，等待对方法务审核\n- 风险：测试人力不足，需要从平台组借调 1 人\n- 下周：完成支付模块联调；准备 Q4 预算初稿"},
+    {"uri": "notes://policies/expense", "name": "报销制度", "mimeType": "text/plain",
+     "text": "差旅报销标准：一线城市住宿每晚不超过 600 元，其他城市不超过 450 元；餐补每天 100 元；报销需在出差结束后 15 天内提交。"},
+    {"uri": "files://logo.png", "name": "公司 Logo", "mimeType": "image/png", "blob": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="},
+]
+RESOURCE_TEMPLATES = [{"uriTemplate": "notes://meetings/{date}", "name": "某天的会议纪要", "mimeType": "text/markdown"}]
+PROMPTS = [
+    {"name": "weekly_report", "title": "周报模板", "description": "按固定结构写本周周报"},
+    {"name": "customer_email", "title": "客户邮件", "description": "给客户写一封跟进邮件",
+     "arguments": [{"name": "customer", "description": "客户名称", "required": True}, {"name": "topic", "description": "邮件主题", "required": True}]},
+]
+
 RATES = {("USD", "CNY"): 7.12, ("EUR", "CNY"): 7.75, ("CNY", "JPY"): 21.3}
 WEATHER = ["晴", "多云", "小雨", "阴"]
 
@@ -109,7 +124,7 @@ def handle_rpc(msg):
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": params.get("protocolVersion", "2025-06-18"),
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": {"tools": {"listChanged": False}, "resources": {}, "prompts": {}},
             "serverInfo": {"name": "mock-mcp", "version": "1.0"},
         }}
     if method == "tools/list":
@@ -122,6 +137,32 @@ def handle_rpc(msg):
         if result is None:
             return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": f"unknown tool {params.get('name')}"}}
         return {"jsonrpc": "2.0", "id": rid, "result": result}
+    if method == "resources/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": {"resources": [{k: v for k, v in r.items() if k not in ("text", "blob")} for r in RESOURCES]}}
+    if method == "resources/templates/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": {"resourceTemplates": RESOURCE_TEMPLATES}}
+    if method == "resources/read":
+        found = [r for r in RESOURCES if r["uri"] == params.get("uri")]
+        if not found:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32002, "message": "resource not found"}}
+        r = found[0]
+        content = {"uri": r["uri"], "mimeType": r["mimeType"]}
+        content.update({"text": r["text"]} if "text" in r else {"blob": r["blob"]})
+        return {"jsonrpc": "2.0", "id": rid, "result": {"contents": [content]}}
+    if method == "prompts/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": {"prompts": PROMPTS}}
+    if method == "prompts/get":
+        args = params.get("arguments") or {}
+        if params.get("name") == "weekly_report":
+            text = "请根据本周的会议纪要写一份周报，结构为：本周完成、进行中、风险与求助、下周计划，每部分 3～5 条，语言简洁。"
+        elif params.get("name") == "customer_email":
+            missing = [a for a in ("customer", "topic") if not args.get(a)]
+            if missing:
+                return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": f"missing arguments: {missing}"}}
+            text = f"给客户「{args['customer']}」写一封关于「{args['topic']}」的跟进邮件：先感谢对方的时间，再说明进展和下一步，最后约下次沟通时间。语气正式友好，300 字以内。"
+        else:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown prompt"}}
+        return {"jsonrpc": "2.0", "id": rid, "result": {"description": params.get("name"), "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}}
     if method == "ping":
         return {"jsonrpc": "2.0", "id": rid, "result": {}}
     return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"method not found: {method}"}}

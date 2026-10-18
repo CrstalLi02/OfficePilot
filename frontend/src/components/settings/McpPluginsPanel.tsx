@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, FileJson, Loader2, Plus, Puzzle, RefreshCw, Trash2, X } from 'lucide-react'
-import { mcpApi, type McpServer, type McpServerInput, type McpTool } from '@/api'
+import { ChevronDown, ExternalLink, FileJson, LayoutGrid, Loader2, Plus, Puzzle, RefreshCw, Trash2, X } from 'lucide-react'
+import { mcpApi, type McpCatalogEntry, type McpServer, type McpServerInput, type McpTool } from '@/api'
 
 const STATE: Record<string, { label: string; dot: string }> = {
   connected: { label: '已连接', dot: 'bg-emerald-500' },
@@ -33,7 +33,15 @@ interface Draft {
   headers: Pair[]
   env: Pair[]
   enabled: boolean
+  approval: McpServer['approval']
+  assumeReadOnly: boolean
 }
+
+const APPROVALS = [
+  ['writes', '写操作需要确认（推荐）'],
+  ['always', '每次调用都确认'],
+  ['never', '无需确认（定时任务里也能用写操作）'],
+] as const
 
 const emptyDraft = (): Draft => ({
   name: '',
@@ -46,6 +54,8 @@ const emptyDraft = (): Draft => ({
   headers: [],
   env: [],
   enabled: true,
+  approval: 'writes',
+  assumeReadOnly: false,
 })
 
 const fromServer = (s: McpServer): Draft => ({
@@ -60,6 +70,8 @@ const fromServer = (s: McpServer): Draft => ({
   headers: s.header_names.map((name) => ({ name, value: '', saved: true })),
   env: s.env_names.map((name) => ({ name, value: '', saved: true })),
   enabled: s.enabled,
+  approval: s.approval || 'writes',
+  assumeReadOnly: !!s.assume_read_only,
 })
 
 const toInput = (d: Draft): McpServerInput => ({
@@ -73,6 +85,8 @@ const toInput = (d: Draft): McpServerInput => ({
   headers: d.transport === 'stdio' ? [] : d.headers.filter((h) => h.name.trim()).map(({ name, value }) => ({ name: name.trim(), value })),
   env: d.transport === 'stdio' ? d.env.filter((h) => h.name.trim()).map(({ name, value }) => ({ name: name.trim(), value })) : [],
   enabled: d.enabled,
+  approval: d.approval,
+  assume_read_only: d.assumeReadOnly,
 })
 
 const serverToInput = (s: McpServer, enabled: boolean): McpServerInput => toInput({ ...fromServer(s), enabled })
@@ -172,6 +186,22 @@ function ServerForm({ draft, onChange, onSubmit, onCancel, saving, stdioAllowed 
       )}
 
       <label className="mt-3 block text-xs font-medium text-surface-600">
+        调用前确认
+        <select className={field} value={draft.approval} onChange={(e) => set({ approval: e.target.value as Draft['approval'] })}>
+          {APPROVALS.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <span className="mt-1 block text-[11px] font-normal text-surface-400">需要确认时运行会暂停，在网页或飞书里点“允许”后继续；定时任务没人确认，会直接拒绝。</span>
+      </label>
+      <label className="mt-3 flex items-start gap-2 text-xs text-surface-600">
+        <input type="checkbox" className="mt-0.5" checked={draft.assumeReadOnly} onChange={(e) => set({ assumeReadOnly: e.target.checked })} />
+        <span>
+          这个插件的工具都只读取数据
+          <span className="block text-[11px] text-surface-400">服务没有标注只读时可以勾选：规划 / 问答模式也能用，且不需要确认。只对确实不会修改数据的服务勾选。</span>
+        </span>
+      </label>
+      <label className="mt-3 block text-xs font-medium text-surface-600">
         说明（可选）
         <input className={field} value={draft.description} placeholder="这个插件是做什么的" onChange={(e) => set({ description: e.target.value })} />
       </label>
@@ -219,6 +249,127 @@ function ImportBox({ onDone, onCancel }: { onDone: (msg: string, ok: boolean) =>
         </button>
         <button type="button" onClick={onCancel} className="rounded-full px-4 py-2 text-sm text-surface-600 hover:bg-surface-100">取消</button>
       </div>
+    </div>
+  )
+}
+
+function CatalogEntryCard({ entry, onInstalled, onToast }: { entry: McpCatalogEntry; onInstalled: () => void; onToast: (m: string, ok?: boolean) => void }) {
+  const [open, setOpen] = useState(false)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const install = async () => {
+    setBusy(true)
+    try {
+      const { data } = await mcpApi.install(entry.id, values)
+      const result = (await mcpApi.test(data.id)).data
+      onToast(result.ok ? `已添加「${entry.name}」，发现 ${result.tools.length} 个工具` : `已添加「${entry.name}」，但连接失败：${result.error}`, result.ok)
+      setOpen(false)
+      onInstalled()
+    } catch (err) {
+      onToast(errorText(err, '添加失败'), false)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const disabledReason = entry.installed ? '已添加' : !entry.available ? '服务端未开启本地命令' : ''
+  return (
+    <div className="rounded-2xl border border-black/[0.06] bg-white p-3.5">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold text-surface-900">{entry.name}</span>
+            <span className="rounded bg-surface-100 px-1.5 text-[10px] text-surface-500">{entry.category}</span>
+            {entry.fields.length === 0 && entry.transport !== 'stdio' && <span className="rounded bg-emerald-50 px-1.5 text-[10px] text-emerald-700">免密钥</span>}
+          </div>
+          <div className="mt-1 text-[11px] leading-5 text-surface-500">{entry.description}</div>
+          <a href={entry.docs} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-0.5 text-[11px] text-surface-400 hover:text-surface-700">
+            文档 <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+        <button
+          type="button"
+          disabled={!!disabledReason || busy}
+          onClick={() => (entry.fields.length ? setOpen(!open) : install())}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-surface-800 disabled:bg-surface-200 disabled:text-surface-500"
+        >
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+          {disabledReason || '添加'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-2 border-t border-surface-100 pt-3">
+          {entry.fields.map((f) => (
+            <label key={f.key} className="block text-xs font-medium text-surface-600">
+              {f.label}
+              {f.required && <span className="text-red-500"> *</span>}
+              <input
+                className={field}
+                type={f.secret ? 'password' : 'text'}
+                autoComplete="off"
+                value={values[f.key] || ''}
+                onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+              />
+              {f.help && <span className="mt-1 block text-[11px] font-normal text-surface-400">{f.help}</span>}
+            </label>
+          ))}
+          <div className="flex gap-2">
+            <button type="button" disabled={busy} onClick={install} className="inline-flex items-center gap-1 rounded-full bg-surface-950 px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+              {busy && <Loader2 className="h-3 w-3 animate-spin" />}添加并连接
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-full px-3 py-1.5 text-xs text-surface-600 hover:bg-surface-100">取消</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Catalog({ onInstalled, onToast, onClose }: { onInstalled: () => void; onToast: (m: string, ok?: boolean) => void; onClose: () => void }) {
+  const [entries, setEntries] = useState<McpCatalogEntry[] | null>(null)
+  const [category, setCategory] = useState('全部')
+  const load = () => mcpApi.catalog().then(({ data }) => setEntries(data.entries)).catch(() => setEntries([]))
+  useEffect(() => {
+    load()
+  }, [])
+  const categories = ['全部', ...Array.from(new Set((entries || []).map((e) => e.category)))]
+  const visible = (entries || []).filter((e) => category === '全部' || e.category === category)
+  return (
+    <div className="mb-4 rounded-2xl border border-black/[0.08] bg-surface-50/60 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-semibold text-surface-900">插件目录</div>
+        <button type="button" onClick={onClose} className="rounded-lg p-1 text-surface-400 hover:bg-white" aria-label="关闭目录">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {categories.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCategory(c)}
+            className={`rounded-full px-2.5 py-1 text-[11px] ${category === c ? 'bg-surface-950 text-white' : 'bg-white text-surface-600 hover:bg-surface-100'}`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+      {entries === null ? (
+        <div className="flex items-center gap-2 py-4 text-xs text-surface-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载…</div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {visible.map((entry) => (
+            <CatalogEntryCard
+              key={entry.id}
+              entry={entry}
+              onToast={onToast}
+              onInstalled={() => {
+                load()
+                onInstalled()
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -286,7 +437,7 @@ function ServerCard({ server, onEdit, onChanged, onToast }: { server: McpServer;
             </span>
           </div>
           <div className="mt-0.5 truncate text-[11px] text-surface-400">
-            <code>mcp__{server.slug}__*</code> · {server.transport === 'stdio' ? `本地命令 ${server.command} ${server.args.join(' ')}` : `${server.transport === 'sse' ? 'SSE' : 'HTTP'} ${server.url}`}
+            <code>mcp__{server.slug}__*</code> · {server.approval === 'never' ? '无需确认' : server.approval === 'always' ? '每次确认' : '写操作需确认'} · {server.transport === 'stdio' ? `本地命令 ${server.command} ${server.args.join(' ')}` : `${server.transport === 'sse' ? 'SSE' : 'HTTP'} ${server.url}`}
           </div>
           {server.description && <div className="mt-1 text-[11px] text-surface-500">{server.description}</div>}
           {(server.status?.error || server.secrets_broken) && (
@@ -372,6 +523,7 @@ export function McpPluginsPanel() {
   const [caps, setCaps] = useState<{ stdio: boolean; max_tools_per_run: number } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [importing, setImporting] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
 
@@ -415,7 +567,10 @@ export function McpPluginsPanel() {
           </p>
         </div>
         {!draft && !importing && (
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button onClick={() => setBrowsing(!browsing)} className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3.5 py-2 text-sm font-semibold text-surface-700 hover:bg-surface-50">
+              <LayoutGrid className="h-4 w-4" />插件目录
+            </button>
             <button onClick={() => setImporting(true)} className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3.5 py-2 text-sm font-semibold text-surface-700 hover:bg-surface-50">
               <FileJson className="h-4 w-4" />导入配置
             </button>
@@ -427,6 +582,8 @@ export function McpPluginsPanel() {
       </div>
 
       {toast && <div className={`mb-3 rounded-xl px-3 py-2 text-xs ${toast.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{toast.text}</div>}
+
+      {browsing && !draft && !importing && <Catalog onInstalled={reload} onToast={showToast} onClose={() => setBrowsing(false)} />}
 
       {importing && (
         <ImportBox

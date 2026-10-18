@@ -96,7 +96,10 @@ function ToolCard({ run, now }: { run: ToolRun; now: number }) {
   const Icon = meta.icon
   const active = run.status === 'pending' || run.status === 'running'
   const elapsed = run.durationMs ?? (run.runningAt ? now - run.runningAt : undefined)
+  const waiting = run.approval?.status === 'pending'
   const detail =
+    waiting ? '等待你确认…' :
+    run.approval?.status === 'rejected' && run.status === 'error' ? '你拒绝了这次调用' :
     run.status === 'error' ? run.error :
     run.status === 'cancelled' ? '已停止' :
     run.status === 'pending' ? '正在准备参数…' :
