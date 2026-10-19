@@ -330,6 +330,8 @@ export interface ChatSSEEvent {
 export interface FileItem {
   id: string;
   name: string;
+  /** 服务端存储路径（桌面版用于在访达中显示 / 用默认应用打开） */
+  file_path?: string;
   file_type: string;
   file_size: number;
   folder_id?: string;

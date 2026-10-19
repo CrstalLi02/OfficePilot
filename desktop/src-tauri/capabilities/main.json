@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "主窗口加载本机服务页面，只开放应用自己的几个命令",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": ["core:default", "allow-reveal-path", "allow-open-path", "allow-pick-folder"]
+}
