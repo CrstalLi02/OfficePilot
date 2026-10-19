@@ -95,6 +95,9 @@ export const settingsApi = {
   getSettings: () => api.get<AppSettings>('/settings'),
   saveSettings: (payload: AppSettings) => api.put<AppSettings>('/settings', payload),
   testMcp: (payload: MCPServiceConfig) => api.post('/settings/mcp/test', payload),
+  /** 测试模型服务（发一次很短的对话请求） */
+  testLlm: (payload: { base_url: string; api_key: string; model: string }) =>
+    api.post<{ ok: boolean; error?: string; latency_ms?: number }>('/settings/llm/test', payload),
 };
 
 // ===== 文件 API =====

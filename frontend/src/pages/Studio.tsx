@@ -12,6 +12,7 @@ import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SkillsDialog } from '@/components/skills/SkillsDialog'
 import { TasksDialog } from '@/components/tasks/TasksDialog'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
+import { ModelSetupDialog } from '@/components/settings/ModelSetupDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu, ListChecks, Settings } from 'lucide-react'
 import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
 import { extractArtifactSummary } from '@/lib/artifact-summary'
@@ -236,6 +237,10 @@ export default function Studio() {
 
   // 设置 & 模型
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  // 还没有可用的模型服务时（桌面版首次启动）引导配置；点“稍后”后本次不再弹出
+  const [modelSetupLater, setModelSetupLater] = useState(false)
+  const activeLlmProfile = settings?.llm_profiles.find((p) => p.id === settings.active_profile_id) || settings?.llm_profiles[0]
+  const needsModelSetup = Boolean(settings && !modelSetupLater && !activeLlmProfile?.has_api_key)
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [modelProfiles, setModelProfiles] = useState<LLMProfile[]>([])
 
@@ -2164,7 +2169,7 @@ export default function Studio() {
               <button
                 onClick={() => setActiveView(activeView === 'settings' ? 'chat' : 'settings')}
                 className={`btn-ghost shrink-0 rounded-full hover:bg-white/75 ${activeView === 'settings' ? 'bg-white/90' : 'bg-white/45'}`}
-                title="设置（插件、IM 接入）"
+                title="设置（模型、插件、IM 接入）"
               >
                 <Settings className="w-4 h-4" />
               </button>
@@ -2198,6 +2203,16 @@ export default function Studio() {
             description="文档、图片、视频、绘图可并行开启，点击标签快速切换上下文"
           />
 
+          {needsModelSetup && settings && (
+            <ModelSetupDialog
+              settings={settings}
+              onLater={() => setModelSetupLater(true)}
+              onSaved={() => {
+                setModelSetupLater(true)
+                loadSettings()
+              }}
+            />
+          )}
           <div className="min-h-0 flex-1 overflow-hidden">
             {activeView === 'settings' ? (
               <SettingsDialog

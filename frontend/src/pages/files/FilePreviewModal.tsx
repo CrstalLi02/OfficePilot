@@ -1,5 +1,6 @@
+import { fileManagerName, isDesktop, openPath, revealPath } from '@/lib/desktop'
 import { useEffect, useState } from 'react'
-import { X, Download, ChevronLeft, ChevronRight, FileText, FileSpreadsheet, FileType, FileCode, File as FileIcon, ChevronDown, Play } from 'lucide-react'
+import { X, Download, ChevronLeft, ChevronRight, FileText, FileSpreadsheet, FileType, FileCode, File as FileIcon, ChevronDown, Play, ExternalLink, FolderOpen } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fileApi } from '@/api'
@@ -501,6 +502,26 @@ export function FilePreviewModal({ file, onClose, onPrev, onNext, onDownload }: 
         >
           <Download className="h-4 w-4" /> 下载
         </button>
+
+        {/* 桌面版：在访达中显示 / 用默认应用打开 */}
+        {isDesktop() && file.file_path && (
+          <>
+            <button
+              onClick={() => openPath(file.file_path!).catch((err) => window.alert(String(err)))}
+              className="flex h-10 items-center gap-1.5 rounded-full bg-white/15 px-4 text-sm font-medium text-white hover:bg-white/25 transition"
+              title="用默认应用打开"
+            >
+              <ExternalLink className="h-4 w-4" /> 打开
+            </button>
+            <button
+              onClick={() => revealPath(file.file_path!).catch((err) => window.alert(String(err)))}
+              className="flex h-10 items-center gap-1.5 rounded-full bg-white/15 px-4 text-sm font-medium text-white hover:bg-white/25 transition"
+              title={`在${fileManagerName()}中显示`}
+            >
+              <FolderOpen className="h-4 w-4" /> 在{fileManagerName()}中显示
+            </button>
+          </>
+        )}
 
         {/* 关闭 */}
         <button

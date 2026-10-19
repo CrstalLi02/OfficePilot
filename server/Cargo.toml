@@ -4,6 +4,10 @@ version = "1.0.0"
 edition = "2021"
 description = "WaLiOffice - Web AI Agent for office workflows"
 
+[lib]
+name = "walioffice"
+path = "src/lib.rs"
+
 [[bin]]
 name = "walioffice"
 path = "src/main.rs"

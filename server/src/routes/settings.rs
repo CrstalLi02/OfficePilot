@@ -14,22 +14,31 @@ pub fn router() -> Router {
     Router::new()
         .route("/api/settings", get(get_settings).put(save_settings))
         .route("/api/settings/mcp/test", post(test_mcp_service))
+        .route("/api/settings/llm/test", post(test_llm))
 }
 
 pub fn default_settings() -> AppSettings {
     let cfg = crate::config::config();
-    let models = configured_models(cfg);
+    let mut models = configured_models(cfg);
+    let mut base_url = cfg.llm_base_url.clone();
+    let mut default_model = cfg.llm_model.clone();
+    // 桌面版没有环境变量里的模型配置：先放一个 DeepSeek 模板，首次启动向导里填写密钥
+    if crate::config::is_desktop() && models.is_empty() {
+        base_url = "https://api.deepseek.com/v1".into();
+        models = vec!["deepseek-chat".into()];
+        default_model = "deepseek-chat".into();
+    }
     let default_profile = LlmProfileConfig {
         id: "default".into(),
         name: "默认模型服务".into(),
-        base_url: cfg.llm_base_url.clone(),
+        base_url,
         api_keys: if cfg.llm_api_key.trim().is_empty() {
             vec![]
         } else {
             vec![cfg.llm_api_key.clone()]
         },
         models,
-        default_model: cfg.llm_model.clone(),
+        default_model,
         api_key: None,
         has_api_key: !cfg.llm_api_key.is_empty(),
     };
@@ -537,4 +546,55 @@ async fn test_sse_mcp_service(
         "message": format!("MCP SSE 服务连接成功，共发现 {} 个工具", tools.len()),
         "tools": tools
     })))
+}
+
+
+#[derive(Debug, serde::Deserialize)]
+struct LlmTestInput {
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+    model: String,
+}
+
+/// 测试模型服务：发一次很短的对话请求（OpenAI 兼容接口）
+async fn test_llm(_user: AuthUser, Json(input): Json<LlmTestInput>) -> Result<Json<serde_json::Value>, AppError> {
+    let base = input.base_url.trim().trim_end_matches('/');
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err(AppError::BadRequest("服务地址需要以 http:// 或 https:// 开头".into()));
+    }
+    if input.model.trim().is_empty() {
+        return Err(AppError::BadRequest("请填写模型名".into()));
+    }
+    let started = std::time::Instant::now();
+    let mut req = reqwest::Client::new()
+        .post(format!("{base}/chat/completions"))
+        .timeout(std::time::Duration::from_secs(30))
+        .json(&serde_json::json!({
+            "model": input.model.trim(),
+            "messages": [{ "role": "user", "content": "回复“好”" }],
+            "max_tokens": 5,
+            "stream": false,
+        }));
+    if !input.api_key.trim().is_empty() {
+        req = req.bearer_auth(input.api_key.trim());
+    }
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(e) => return Ok(Json(serde_json::json!({ "ok": false, "error": format!("连接失败：{}", e.without_url()) }))),
+    };
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.unwrap_or_default();
+    if !status.is_success() {
+        let msg = body
+            .pointer("/error/message")
+            .or_else(|| body.get("message"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("未知错误");
+        return Ok(Json(serde_json::json!({ "ok": false, "error": format!("HTTP {}：{msg}", status.as_u16()) })));
+    }
+    if body.pointer("/choices/0").is_none() {
+        return Ok(Json(serde_json::json!({ "ok": false, "error": "返回格式不是 OpenAI 兼容的对话接口" })));
+    }
+    Ok(Json(serde_json::json!({ "ok": true, "latency_ms": started.elapsed().as_millis() as u64 })))
 }

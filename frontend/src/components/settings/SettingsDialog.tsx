@@ -1,4 +1,4 @@
-import { Check, KeyRound, MessageSquare, Plus, Puzzle, Trash2, X } from 'lucide-react'
+import { Bot, Check, KeyRound, MessageSquare, Plus, Puzzle, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ImChannelsPanel } from './ImChannelsPanel'
 import { McpPluginsPanel } from './McpPluginsPanel'
@@ -30,7 +30,7 @@ function getProfileKeys(profile: LLMProfile) {
 }
 
 export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDialogProps) {
-  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im'>('mcp')
+  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im'>('llm')
   const [draft, setDraft] = useState<AppSettings | null>(settings)
   const [saving, setSaving] = useState(false)
 
@@ -120,6 +120,7 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
 
           <div className="flex gap-1.5 overflow-x-auto md:block md:space-y-1.5">
             {[
+              ['llm', '模型服务', Bot],
               ['mcp', '插件（MCP）', Puzzle],
               ['im', 'IM 接入', MessageSquare],
             ].map(([key, label, Icon]: any) => (

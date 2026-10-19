@@ -51,7 +51,10 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        dotenvy::dotenv().ok();
+        // 桌面版的配置全部由程序设置，不读取启动目录（及上级目录）里的 .env
+        if !is_desktop() {
+            dotenvy::dotenv().ok();
+        }
 
         let jwt_secret = env_or_required("AIPPT_JWT_SECRET");
 
@@ -214,7 +217,15 @@ fn split_env_list(value: &str) -> Vec<String> {
         .collect()
 }
 
+/// 桌面版（WALIOFFICE_DESKTOP=1）：模型等配置来自设置页，环境变量可以不填
+pub fn is_desktop() -> bool {
+    env::var("WALIOFFICE_DESKTOP").map(|v| v == "1" || v == "true").unwrap_or(false)
+}
+
 fn env_or_required(key: &str) -> String {
+    if is_desktop() {
+        return env_or(key, "");
+    }
     env::var(key).unwrap_or_else(|_| {
         eprintln!("缺少必要环境变量：{key}。请复制 .env.example 为 .env 并填写配置。");
         std::process::exit(1);
