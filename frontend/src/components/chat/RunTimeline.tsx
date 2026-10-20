@@ -34,6 +34,12 @@ export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> =
   workspace_read: { label: '读取文件', icon: FileSearch },
   workspace_write: { label: '保存到文件', icon: Save },
   workspace_organize: { label: '整理文件', icon: FolderTree },
+  docs_read: { label: '读取 Word', icon: FileSearch },
+  docs_apply: { label: '修改 Word', icon: FilePen },
+  sheet_read: { label: '读取 Excel', icon: Table2 },
+  sheet_apply: { label: '修改 Excel', icon: Sheet },
+  slides_read: { label: '读取 PPT', icon: FileSearch },
+  slides_apply: { label: '修改 PPT', icon: LayoutDashboard },
 }
 
 function formatDuration(ms: number) {

@@ -1,0 +1,3633 @@
+[
+  {
+    "id": "ppt-basic",
+    "category": "ppt",
+    "message": "帮我做个PPT汇报材料，主题是2026年Q3销售复盘",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": true,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3607,
+        "reason": "未调用 [\"ppt_plan\", \"ppt_generate\"] 中任何一个"
+      }
+    ]
+  },
+  {
+    "id": "ppt-en",
+    "category": "ppt",
+    "message": "Make a 10-slide presentation introducing our new CRM product to enterprise customers",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "ppt_plan"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 4327,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ppt-training",
+    "category": "ppt",
+    "message": "做一份新员工信息安全培训课件，大概15页",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "ppt_plan"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3231,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "doc-prd",
+    "category": "doc",
+    "message": "写一份会员积分系统的PRD，需要导出Word",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1730,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "doc-report",
+    "category": "doc",
+    "message": "帮我写一份关于远程办公效率的调研报告，正式一点",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": true,
+        "tools": [
+          "web_search"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 4328,
+        "reason": "未调用 [\"doc_generate\", \"md_generate\", \"use_skill\"] 中任何一个"
+      }
+    ]
+  },
+  {
+    "id": "doc-plan",
+    "category": "doc",
+    "message": "出一份下季度市场推广执行方案文档",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "doc_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 6019,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "md-readme",
+    "category": "markdown",
+    "message": "给我写一个开源项目的README，项目是一个命令行番茄钟工具",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "md_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 8381,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "md-minutes",
+    "category": "markdown",
+    "message": "把下面内容整理成会议纪要：今天讨论了上线时间定在11月5日，张三负责后端联调，李四负责测试，风险是支付通道审批可能延期",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1657,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "md-kb",
+    "category": "markdown",
+    "message": "整理一篇知识库文章：Git 分支管理最佳实践",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "md_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2150,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "sheet-budget",
+    "category": "sheet",
+    "message": "做一个10人团队年会的预算表，要能导出Excel",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "sheet_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 4827,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "sheet-schedule",
+    "category": "sheet",
+    "message": "帮我排一个为期6周的项目排期表，包含任务、负责人、开始结束日期",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "sheet_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 8485,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "sheet-xlsx-en",
+    "category": "sheet",
+    "message": "Create an xlsx tracker for job applications with company, role, status, date applied and next step",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "sheet_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2143,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chart-trend",
+    "category": "chart",
+    "message": "用折线图展示一下过去12个月的用户增长趋势，数据你按一个SaaS产品合理模拟",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "chart_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2351,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chart-share",
+    "category": "chart",
+    "message": "国内主流云厂商市场份额大概是多少？画个饼图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "web_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2294,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chart-funnel",
+    "category": "chart",
+    "message": "做一个电商转化漏斗图：访问10万，加购2万，下单8000，支付6000",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "chart_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1927,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "drawio-flow",
+    "category": "drawio",
+    "message": "画一个请假审批的流程图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "drawio_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2195,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "drawio-arch",
+    "category": "drawio",
+    "message": "帮我画一张微服务架构图：网关、用户服务、订单服务、支付服务、MySQL、Redis、Kafka",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "drawio_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 4160,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "drawio-er",
+    "category": "drawio",
+    "message": "画一个图书馆管理系统的ER图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "drawio_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2704,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "image-poster",
+    "category": "image",
+    "message": "帮我做一张双十一促销海报，红色喜庆风格",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "image_prompt"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3231,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "image-logo",
+    "category": "image",
+    "message": "设计一个咖啡店的logo，极简线条风",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "image_prompt"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2520,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "image-edit-attach",
+    "category": "image",
+    "message": "帮我改图，把背景换成海边",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "image_prompt"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 4606,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "video-simple",
+    "category": "video",
+    "message": "生成一个5秒的视频：一只橘猫在窗台上晒太阳",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "video_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2511,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "video-animate-attach",
+    "category": "video",
+    "message": "让这张图片动起来",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 6618,
+        "reason": "缺少 [\"video_generate\"]"
+      }
+    ]
+  },
+  {
+    "id": "video-cartoon",
+    "category": "video",
+    "message": "帮我做个动画片",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 6387,
+        "reason": "未调用 [\"video_generate\", \"video_storyboard\"] 中任何一个"
+      }
+    ]
+  },
+  {
+    "id": "video-complex",
+    "category": "video",
+    "message": "做一个30秒的新品发布会宣传片，包含开场、产品特写、用户场景、结尾logo四个镜头",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "video_storyboard"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 8116,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "text-first-prompt",
+    "category": "text_first",
+    "message": "先帮我写提示词，我想做一个动画片，关于西游记孙悟空的",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "md_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 25590,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "text-first-script",
+    "category": "text_first",
+    "message": "帮我写个视频脚本，主题是环保",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "md_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 7674,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "text-first-plan",
+    "category": "text_first",
+    "message": "我想做一个品牌宣传片，先帮我构思一下方案",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 10064,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "text-first-imgprompt",
+    "category": "text_first",
+    "message": "写几个用于生成赛博朋克城市夜景图片的prompt，先不要出图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 13632,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "understand-what",
+    "category": "image_understanding",
+    "message": "这张图片是什么",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 4227,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "understand-ocr",
+    "category": "image_understanding",
+    "message": "帮我把截图里的文字提取出来",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 4674,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "search-news",
+    "category": "search",
+    "message": "搜索一下最近一周AI Agent领域有哪些重要新闻",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "web_search"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 2371,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "search-policy",
+    "category": "search",
+    "message": "查一下2026年个人所得税专项附加扣除的最新政策",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "web_search"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 2204,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "search-then-md",
+    "category": "search",
+    "message": "联网检索一下 MCP 协议的最新进展，然后整理成一篇Markdown调研笔记",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "web_search"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 2415,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chat-hello",
+    "category": "chat",
+    "message": "你好",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 2563,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chat-qa",
+    "category": "chat",
+    "message": "PPT和Keynote有什么区别？简单说说",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 5124,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chat-capability",
+    "category": "chat",
+    "message": "你都能帮我做什么？",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 5632,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "compound-outline-then-ppt",
+    "category": "compound",
+    "message": "先帮我写大纲，再生成PPT，主题是公司年度战略",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": true,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 41874,
+        "reason": "未调用 [\"md_generate\", \"ppt_plan\", \"doc_generate\"] 中任何一个"
+      }
+    ]
+  },
+  {
+    "id": "multi-ppt-drawio-doc",
+    "category": "compound",
+    "message": "围绕电商大促技术保障，同时给我一份PPT、一张系统架构流程图和一份Word方案文档",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "doc_generate",
+          "drawio_generate",
+          "ppt_plan"
+        ],
+        "tool_call_count": 3,
+        "latency_ms": 6781,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "multi-sheet-chart",
+    "category": "compound",
+    "message": "做一份各部门季度费用的Excel，并且配一个柱状图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "chart_generate",
+          "sheet_generate"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 9655,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ref-image-to-video",
+    "category": "reference",
+    "message": "用刚才那张图做个视频",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "video_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3478,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ref-modify-ppt",
+    "category": "reference",
+    "message": "把第三页改得更简洁一点",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2645,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "attach-text-summarize",
+    "category": "attachment",
+    "message": "把这份文档总结成一页汇报PPT",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "ppt_plan"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3483,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "attach-text-qa",
+    "category": "attachment",
+    "message": "这份文档里提到的接口耗时下降了多少？",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [],
+        "tool_call_count": 0,
+        "latency_ms": 1649,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ui-image-mode-text-first",
+    "category": "ui_mode",
+    "message": "先帮我写一段海报文案，再出图",
+    "exposed_tools": [
+      "image_prompt"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "image_prompt"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 17306,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-find",
+    "category": "workspace",
+    "message": "帮我找一下上个月的会议纪要在哪",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1308,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-list",
+    "category": "workspace",
+    "message": "我的文件里都有些什么？",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1432,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-read-summarize",
+    "category": "workspace",
+    "message": "读一下我文件里的《需求说明.docx》，总结成三点",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1939,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-organize",
+    "category": "workspace",
+    "message": "把根目录里所有的合同按客户名建文件夹归档",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1847,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-convert",
+    "category": "workspace",
+    "message": "把文件里的 Word 文档都转成 Markdown",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1704,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-save-note",
+    "category": "workspace",
+    "message": "帮我在文件里新建一个“待办”文件夹，并写一份本周待办清单存进去",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_organize",
+          "workspace_write"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 10185,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-ppt-from-file",
+    "category": "workspace",
+    "message": "根据我上传过的《Q3 销售数据.xlsx》做一份汇报 PPT",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2023,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-ask-mode-read",
+    "category": "workspace",
+    "message": "我文件里的《合同模板.docx》付款条款是怎么写的？",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1405,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "data-profile",
+    "category": "data",
+    "message": "看看我上传的《2026Q3 销售明细.xlsx》里都有哪些字段",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "data_profile"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1830,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "data-agg",
+    "category": "data",
+    "message": "用《2026Q3 销售明细.xlsx》算一下各区域的销售总额，按从高到低排",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": false,
+        "prep": true,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2363,
+        "reason": "未调用 [\"data_profile\", \"data_query\"] 中任何一个"
+      }
+    ]
+  },
+  {
+    "id": "data-chart",
+    "category": "data",
+    "message": "根据《订单.csv》画一张每月订单量的折线图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "data_profile"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1931,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "data-report",
+    "category": "data",
+    "message": "分析《2026Q3 销售明细.xlsx》，写一份带图表的销售分析报告",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2246,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "data-csv-convert",
+    "category": "data",
+    "message": "把《预算.xlsx》每个 sheet 都导出成 csv 文件",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1739,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "chart-no-file",
+    "category": "chart",
+    "message": "随便画个柱状图示意一下三家公司的市场份额：A 50%，B 30%，C 20%",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "chart_generate"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1879,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "skill-weekly",
+    "category": "skill",
+    "message": "帮我写本周周报：完成了支付模块重构，修了 12 个线上 bug，下周灰度新结算页",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1819,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "skill-official",
+    "category": "skill",
+    "message": "写一份关于开展年度消防安全检查的通知，发给各部门",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1608,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "skill-resume",
+    "category": "skill",
+    "message": "帮我对照这个 AI Agent 开发岗位的 JD 优化一下简历里的项目经历",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill",
+          "workspace_list"
+        ],
+        "tool_call_count": 2,
+        "latency_ms": 3843,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "skill-competitor",
+    "category": "skill",
+    "message": "做一份国内 AI 办公助手的竞品分析",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1649,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "schedule-weekly-report",
+    "category": "schedule",
+    "message": "每周五下午五点帮我写本周周报",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "schedule_create"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 3657,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "schedule-daily-news",
+    "category": "schedule",
+    "message": "以后每天早上9点帮我整理一份AI行业新闻简报",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "schedule_create"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 5045,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "schedule-monthly",
+    "category": "schedule",
+    "message": "每个月1号提醒我整理上个月的报销单据，生成一份清单",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "schedule_create"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 8959,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "schedule-list",
+    "category": "schedule",
+    "message": "我现在都设置了哪些定时任务？",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "schedule_list"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1609,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-docx-edit",
+    "category": "office-edit",
+    "message": "把我文件里的《季度报告.docx》第二节里的 2025 年都改成 2026 年，其它格式别动",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "workspace_search"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1505,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-docx-track",
+    "category": "office-edit",
+    "message": "用修订模式帮我改一下 /合同/采购合同.docx：付款期限改成 60 天，我要发给法务审",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "docs_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1888,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-docx-insert",
+    "category": "office-edit",
+    "message": "在 /项目/方案.docx 的“实施计划”后面加一节“风险与对策”，列三条",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "docs_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2081,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-xlsx-formula",
+    "category": "office-edit",
+    "message": "在 /数据/销售.xlsx 里加一个汇总表，按地区汇总金额，用公式算，再配个柱形图",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "sheet_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1974,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-xlsx-fix",
+    "category": "office-edit",
+    "message": "/财务/预算.xlsx 里 Sheet1 的 D 列合计算错了，帮我改成正确的公式",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "sheet_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 2021,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-pptx-edit",
+    "category": "office-edit",
+    "message": "把 /汇报/年度总结.pptx 第三页的标题改成“2026 展望”，再把最后一页删掉",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "slides_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1560,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "ws-pptx-notes",
+    "category": "office-edit",
+    "message": "给 /汇报/路演.pptx 每一页都写上演讲备注",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "slides_read"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1909,
+        "reason": ""
+      }
+    ]
+  },
+  {
+    "id": "new-doc-not-edit",
+    "category": "office-edit",
+    "message": "帮我写一份新的项目周报，Word 格式",
+    "exposed_tools": [
+      "artifact_edit",
+      "chart_generate",
+      "data_profile",
+      "data_query",
+      "doc_generate",
+      "docs_apply",
+      "docs_read",
+      "drawio_generate",
+      "image_prompt",
+      "md_generate",
+      "ppt_generate",
+      "ppt_plan",
+      "read_skill_file",
+      "schedule_create",
+      "schedule_list",
+      "sheet_apply",
+      "sheet_generate",
+      "sheet_read",
+      "slides_apply",
+      "slides_read",
+      "use_skill",
+      "video_batch_generate",
+      "video_generate",
+      "video_storyboard",
+      "web_search",
+      "workspace_list",
+      "workspace_organize",
+      "workspace_read",
+      "workspace_search",
+      "workspace_write"
+    ],
+    "attempts": [
+      {
+        "passed": true,
+        "prep": false,
+        "tools": [
+          "use_skill"
+        ],
+        "tool_call_count": 1,
+        "latency_ms": 1451,
+        "reason": ""
+      }
+    ]
+  }
+]
