@@ -409,6 +409,8 @@ pub enum Inverse {
     RestoreFile { file_id: String, folder_id: Option<String>, name: String },
     /// 把文件夹放回原位置、改回原名
     RestoreFolder { folder_id: String, parent_id: Option<String>, name: String },
+    /// 把文件内容恢复成修改前的快照；hash 是修改后内容的哈希，文件之后又被改过时不恢复
+    RestoreContent { file_id: String, snapshot: String, hash: String },
 }
 
 /// 一次写入 / 整理的记录器：边执行边累积逆操作
@@ -539,6 +541,68 @@ pub async fn export_artifact(
     let line = journal.lines.last().cloned().unwrap_or_default();
     let op_id = journal.commit(pool, owner_id, session_id).await?;
     Ok((line.trim_start_matches("导出 ").to_string(), op_id))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
+
+async fn write_atomic(path: &str, bytes: &[u8]) -> AppResult<()> {
+    let tmp = format!("{path}.tmp-{}", uuid::Uuid::new_v4().simple());
+    tokio::fs::write(&tmp, bytes).await?;
+    tokio::fs::rename(&tmp, path).await?;
+    Ok(())
+}
+
+async fn set_file_size(pool: &DbPool, owner_id: &str, file_id: &str, size: usize) -> AppResult<()> {
+    sqlx::query("UPDATE files SET file_size = ?, updated_at = ? WHERE id = ? AND owner_id = ?")
+        .bind(size as i64)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(file_id)
+        .bind(owner_id)
+        .execute(pool)
+        .await?;
+    // 正文变了，全文索引的缓存作废
+    sqlx::query("DELETE FROM file_texts WHERE file_id = ?").bind(file_id).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn read_bytes(file: &FileRow) -> AppResult<Vec<u8>> {
+    tokio::fs::read(&file.file_path).await.map_err(|e| bad(format!("读取 {} 失败：{e}", file.name)))
+}
+
+/// 原地改写文件内容：先存一份快照，记录可撤销的逆操作
+pub async fn replace_content(pool: &DbPool, owner_id: &str, file: &FileRow, bytes: &[u8], summary: &str, session_id: Option<&str>) -> AppResult<Option<String>> {
+    let dir = std::path::PathBuf::from(&crate::config::config().data_dir).join("snapshots").join(owner_id);
+    tokio::fs::create_dir_all(&dir).await?;
+    let snapshot = dir.join(format!("{}-{}", file.id, uuid::Uuid::new_v4().simple()));
+    tokio::fs::copy(&file.file_path, &snapshot).await.map_err(|e| bad(format!("保存修改前的快照失败：{e}")))?;
+    write_atomic(&file.file_path, bytes).await?;
+    set_file_size(pool, owner_id, &file.id, bytes.len()).await?;
+    let mut journal = Journal::new();
+    journal.inverse.push(Inverse::RestoreContent { file_id: file.id.clone(), snapshot: snapshot.to_string_lossy().into_owned(), hash: sha256_hex(bytes) });
+    journal.lines.push(summary.to_string());
+    journal.commit(pool, owner_id, session_id).await
+}
+
+/// 另存为同目录（或指定目录）下的新文件，同名自动编号
+pub async fn save_bytes_as(pool: &DbPool, owner_id: &str, path: &str, bytes: &[u8], mime: &str, session_id: Option<&str>) -> AppResult<(String, Option<String>)> {
+    let mut tree = Tree::load(pool, owner_id).await?;
+    let mut parts = normalize(path).map_err(bad)?;
+    let name = parts.pop().ok_or_else(|| bad("缺少文件名"))?;
+    let mut journal = Journal::new();
+    let folder = ensure_folder(pool, owner_id, &mut tree, &parts.join("/"), &mut journal).await?;
+    let name = unique_name(&tree.names_in(folder.as_deref()), &name);
+    let row = crate::file_store::save_file_bytes(pool, owner_id, folder.as_deref(), &name, bytes, mime, "智能助手编辑", json!({ "source": "agent_edit" }))
+        .await
+        .map_err(|e| bad(format!("写入失败：{e}")))?
+        .ok_or_else(|| bad("内容为空"))?;
+    let final_path = format!("{}/{}", tree.folder_path(folder.as_deref()).trim_end_matches('/'), row.name);
+    journal.inverse.push(Inverse::DeleteFile { file_id: row.id.clone() });
+    journal.lines.push(format!("另存为 {final_path}"));
+    let op_id = journal.commit(pool, owner_id, session_id).await?;
+    Ok((final_path, op_id))
 }
 
 async fn rename_file_row(pool: &DbPool, owner_id: &str, file_id: &str, folder: Option<&str>, name: &str) -> AppResult<()> {
@@ -877,6 +941,25 @@ pub async fn undo(pool: &DbPool, owner_id: &str, op_id: &str) -> AppResult<UndoR
                 rename_file_row(pool, owner_id, file_id, folder, name).await?;
                 report.undone += 1;
             }
+            Inverse::RestoreContent { file_id, snapshot, hash } => {
+                let Some(file) = file_repo::get_file(pool, owner_id, file_id).await? else {
+                    report.skipped.push(format!("文件 {file_id} 已不存在"));
+                    continue;
+                };
+                let current = tokio::fs::read(&file.file_path).await.unwrap_or_default();
+                if &sha256_hex(&current) != hash {
+                    report.skipped.push(format!("{} 之后又被修改过，未恢复", file.name));
+                    continue;
+                }
+                let Ok(original) = tokio::fs::read(snapshot).await else {
+                    report.skipped.push(format!("{} 的快照已丢失", file.name));
+                    continue;
+                };
+                write_atomic(&file.file_path, &original).await?;
+                set_file_size(pool, owner_id, file_id, original.len()).await?;
+                let _ = tokio::fs::remove_file(snapshot).await;
+                report.undone += 1;
+            }
             Inverse::RestoreFolder { folder_id, parent_id, name } => {
                 let tree = Tree::load(pool, owner_id).await?;
                 if !tree.folders.contains_key(folder_id) {
@@ -917,7 +1000,7 @@ pub async fn overview(pool: &DbPool, owner_id: &str) -> AppResult<String> {
     top.sort();
     let root_files = tree.files.iter().filter(|f| f.folder_id.is_none()).count();
     let mut out = format!(
-        "## 用户工作区（共 {} 个文件）\n可用 workspace_list / workspace_search / workspace_read 查看，workspace_write / workspace_organize 写入和整理（可撤销）。\n顶层：",
+        "## 用户工作区（共 {} 个文件）\n可用 workspace_list / workspace_search / workspace_read 查看，workspace_write / workspace_organize 写入和整理（可撤销）；已有的 Word / Excel / PPT 用 docs_* / sheet_* / slides_* 原格式修改。\n顶层：",
         tree.files.len()
     );
     let mut items: Vec<String> = top.iter().take(15).map(|(name, n)| format!("/{name}/（{n}）")).collect();
@@ -1156,5 +1239,27 @@ mod tests {
         for f in tree.files() {
             let _ = std::fs::remove_file(&f.file_path);
         }
+    }
+
+    #[tokio::test]
+    async fn replace_content_then_undo_restores_bytes() {
+        let pool = memory_pool().await;
+        write_text(&pool, "u1", "/报告.md", "第一版", None).await.unwrap();
+        let tree = Tree::load(&pool, "u1").await.unwrap();
+        let file = tree.find_file("/报告.md").unwrap().unwrap().clone();
+        let op = replace_content(&pool, "u1", &file, "第二版内容".as_bytes(), "修改 /报告.md", None).await.unwrap().unwrap();
+        assert_eq!(std::fs::read_to_string(&file.file_path).unwrap(), "第二版内容");
+        let report = undo(&pool, "u1", &op).await.unwrap();
+        assert_eq!(report.undone, 1);
+        assert_eq!(std::fs::read_to_string(&file.file_path).unwrap(), "第一版");
+
+        // 之后又被改过的文件不恢复
+        let op = replace_content(&pool, "u1", &file, "AI 修改".as_bytes(), "修改", None).await.unwrap().unwrap();
+        std::fs::write(&file.file_path, "用户又改了").unwrap();
+        let report = undo(&pool, "u1", &op).await.unwrap();
+        assert_eq!(report.undone, 0);
+        assert!(report.skipped[0].contains("之后又被修改过"));
+        assert_eq!(std::fs::read_to_string(&file.file_path).unwrap(), "用户又改了");
+        let _ = std::fs::remove_file(&file.file_path);
     }
 }

@@ -16,6 +16,7 @@ RUN mkdir -p /usr/local/cargo && \
     echo '[source.ustc]' >> /usr/local/cargo/config.toml && \
     echo 'registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"' >> /usr/local/cargo/config.toml
 # 先复制 Cargo.toml 利用 docker 缓存
+COPY engine ../engine
 COPY server/Cargo.toml server/Cargo.lock* ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release 2>/dev/null || true
 # 复制源码

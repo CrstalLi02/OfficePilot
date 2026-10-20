@@ -7,6 +7,7 @@ pub mod drawio_generate;
 pub mod image_prompt;
 pub mod local_video;
 pub mod md_generate;
+pub mod office_edit;
 pub mod ppt_generate;
 pub mod ppt_plan;
 pub mod propose_plan;
@@ -68,6 +69,12 @@ pub async fn register_all_tools() {
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceReadTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceWriteTool)).await;
     REGISTRY.register(Arc::new(workspace_tools::WorkspaceOrganizeTool)).await;
+    REGISTRY.register(Arc::new(office_edit::DocsReadTool)).await;
+    REGISTRY.register(Arc::new(office_edit::DocsApplyTool)).await;
+    REGISTRY.register(Arc::new(office_edit::SheetReadTool)).await;
+    REGISTRY.register(Arc::new(office_edit::SheetApplyTool)).await;
+    REGISTRY.register(Arc::new(office_edit::SlidesReadTool)).await;
+    REGISTRY.register(Arc::new(office_edit::SlidesApplyTool)).await;
 
     let tools = REGISTRY.list().await;
     tracing::info!(

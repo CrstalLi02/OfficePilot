@@ -70,3 +70,11 @@
 {"id": "mcp-ticket", "category": "mcp", "requires_mcp": true, "message": "帮我给 IT 提个工单：大会议室投影仪不亮，优先级中", "expect": ["mcp__demo__create_ticket"], "forbid": ["doc_generate", "sheet_generate"]}
 {"id": "mcp-not-hijacked", "category": "mcp", "requires_mcp": true, "message": "写一份关于外汇风险管理制度的 Word 文档", "expect_any": ["doc_generate", "use_skill"], "forbid": ["mcp__demo__create_ticket", "mcp__demo__get_weather"]}
 {"id": "mcp-ticket-after-history", "category": "mcp", "requires_mcp": true, "history": [{"role": "user", "content": "帮我提个工单：财务室空调不制冷，优先级高"}, {"role": "assistant", "content": "工单已创建成功 ✅\n\n- **工单编号**：T-1001\n- **标题**：财务室空调不制冷\n- **优先级**：高"}], "message": "再提一个工单：前台电话坏了，优先级中", "expect": ["mcp__demo__create_ticket"]}
+{"id": "ws-docx-edit", "category": "office-edit", "message": "把我文件里的《季度报告.docx》第二节里的 2025 年都改成 2026 年，其它格式别动", "expect_any": ["docs_read", "docs_apply", "workspace_search", "workspace_list"], "forbid": ["doc_generate", "md_generate", "artifact_edit"]}
+{"id": "ws-docx-track", "category": "office-edit", "message": "用修订模式帮我改一下 /合同/采购合同.docx：付款期限改成 60 天，我要发给法务审", "expect_any": ["docs_read", "docs_apply"], "forbid": ["doc_generate", "md_generate"]}
+{"id": "ws-docx-insert", "category": "office-edit", "message": "在 /项目/方案.docx 的“实施计划”后面加一节“风险与对策”，列三条", "expect_any": ["docs_read", "docs_apply", "workspace_search"], "forbid": ["doc_generate", "md_generate"]}
+{"id": "ws-xlsx-formula", "category": "office-edit", "message": "在 /数据/销售.xlsx 里加一个汇总表，按地区汇总金额，用公式算，再配个柱形图", "expect_any": ["sheet_read", "sheet_apply", "data_profile"], "forbid": ["sheet_generate", "chart_generate"]}
+{"id": "ws-xlsx-fix", "category": "office-edit", "message": "/财务/预算.xlsx 里 Sheet1 的 D 列合计算错了，帮我改成正确的公式", "expect_any": ["sheet_read", "sheet_apply"], "forbid": ["sheet_generate"]}
+{"id": "ws-pptx-edit", "category": "office-edit", "message": "把 /汇报/年度总结.pptx 第三页的标题改成“2026 展望”，再把最后一页删掉", "expect_any": ["slides_read", "slides_apply"], "forbid": ["ppt_generate", "ppt_plan"]}
+{"id": "ws-pptx-notes", "category": "office-edit", "message": "给 /汇报/路演.pptx 每一页都写上演讲备注", "expect_any": ["slides_read", "slides_apply"], "forbid": ["ppt_generate", "ppt_plan"]}
+{"id": "new-doc-not-edit", "category": "office-edit", "message": "帮我写一份新的项目周报，Word 格式", "expect_any": ["doc_generate", "use_skill"], "forbid": ["docs_apply", "docs_read"]}

@@ -61,6 +61,8 @@ mime_guess = "2"
 
 # Document rendering
 docx-rs = "0.4"
+# 原格式读写 .docx / .xlsx / .pptx（只改动涉及的部分）
+officepilot-engine = { path = "../engine" }
 # 数据分析：进程内 SQL 引擎（纯 Rust、基于 Arrow，异步执行）+ 纯 Rust 读取 Excel
 # 54.x 的最低 Rust 版本是 1.88，与 Dockerfile 的构建镜像一致
 datafusion = { version = "54.1", default-features = false, features = ["sql", "math_expressions", "datetime_expressions", "string_expressions", "unicode_expressions", "regex_expressions", "nested_expressions", "recursive_protection"] }
