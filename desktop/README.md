@@ -10,6 +10,7 @@
 - 默认开启本地命令（stdio）插件，并允许插件连接本机地址；会从登录 shell 读取 PATH，`npx` / `uvx` 等命令可以直接使用。
 - 文件预览里可以“用默认应用打开”或“在访达中显示”（只允许数据目录里的文件）。
 - 不读取启动目录里的 `.env`，所有配置由应用设置。
+- 附带 `officepilot` 命令行（sidecar，编译时由 build.rs 自动构建）：设置 → 集成里可以把 skill 装进 Claude Code / Codex / Cursor / Gemini CLI、复制 MCP 接入配置，或把命令行安装到 `~/.local/bin`。
 
 数据目录：macOS 为 `~/Library/Application Support/com.officepilot.desktop`（数据库、上传和生成的文件、JWT 密钥、`logs/officepilot.log` 日志）。
 

@@ -30,3 +30,28 @@ officepilot guide deck                                       # 内置说明
 ## 给编程 Agent 用
 
 把 `cli/skill/officepilot/` 复制到 Agent 的 skills 目录（例如 Claude Code 的 `~/.claude/skills/officepilot/`），Agent 就会在需要 Office 文件时调用 officepilot。
+
+## MCP 服务端
+
+所有命令也以 MCP 工具提供（19 个工具，外加 `officepilot://guide/*` 资源）：
+
+```bash
+claude mcp add --transport stdio officepilot -- officepilot mcp
+```
+
+Cursor / Claude Desktop 等客户端：
+
+```json
+{ "mcpServers": { "officepilot": { "command": "officepilot", "args": ["mcp"] } } }
+```
+
+给其它机器或容器用（Streamable HTTP，兼容旧版 SSE）：
+
+```bash
+officepilot mcp --http 3093 --host 0.0.0.0 --token "$OFFICEPILOT_MCP_TOKEN"
+curl -T 报告.docx -H "Authorization: Bearer $OFFICEPILOT_MCP_TOKEN" http://服务器:3093/files/报告.docx   # 返回 url，工具的 file 参数可直接用
+```
+
+- stdio 默认与命令行权限相同；设置 `OFFICEPILOT_ALLOWED_ROOTS`（多个目录用 `:` 分隔）后只能访问这些目录。
+- HTTP 默认只监听本机；监听其它地址必须设置令牌。每个会话只能访问自己的临时目录和上传的文件，不会去下载外部链接；空闲 1 小时后清理。
+- 写出的文件返回下载地址，1 MB 以内的同时内嵌在结果里。

@@ -170,11 +170,8 @@ pub fn status(dir: &str) -> Out {
 fn write_deck(spec: &DeckSpec, base: Option<&Path>, out: &str) -> Out {
     let result = deck::build(spec, base)?;
     write_atomic(out, &result.bytes)?;
-    // 组装后再按成品审查一遍
-    let deck_file = pptx::Deck::open(result.bytes)?;
-    let audit = deck::audit(&deck_file.slides()?, deck_file.size);
-    let mut all: Vec<Value> = result.findings.iter().map(|(p, f)| json!({ "slide": p, "level": f.level, "code": f.code, "message": f.message })).collect();
-    all.extend(audit.iter().filter(|(_, f)| f.code != "overlap").map(|(p, f)| json!({ "slide": p, "level": f.level, "code": f.code, "message": f.message })));
+    // 页面检查基于生成时的精确元素，比按成品估算的 audit 准确，这里只报告页面检查的结果
+    let all: Vec<Value> = result.findings.iter().map(|(p, f)| json!({ "slide": p, "level": f.level, "code": f.code, "message": f.message })).collect();
     let lines: Vec<String> = all.iter().map(|v| format!("- 第 {} 页 [{}] {}", v["slide"], if v["level"] == "error" { "错误" } else { "提示" }, v["message"].as_str().unwrap_or(""))).collect();
     Ok(Done::ok(
         format!("已生成 {out}（{} 页）{}", spec.pages.len(), if lines.is_empty() { "，版面检查通过".to_string() } else { format!("，{} 条版面提示：\n{}", lines.len(), lines.join("\n")) }),

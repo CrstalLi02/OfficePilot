@@ -7,6 +7,7 @@ pub mod embed;
 pub mod file;
 pub mod health;
 pub mod im;
+pub mod integrations;
 pub mod mcp;
 pub mod notification;
 pub mod project;
@@ -50,6 +51,7 @@ pub fn build_router() -> Router {
         .merge(schedules::router())
         .merge(im::router())
         .merge(mcp::router())
+        .merge(integrations::router())
         .nest_service(
             "/outputs",
             ServeDir::new(crate::config::config().render_output_dir.clone()),

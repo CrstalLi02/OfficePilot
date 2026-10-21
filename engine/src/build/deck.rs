@@ -961,6 +961,11 @@ pub fn audit(slides: &[crate::pptx::Slide], size: (f64, f64)) -> Vec<(usize, Fin
                         let cols = rows.iter().map(Vec::len).max().unwrap_or(1).max(1);
                         rows.iter().map(|r| r.iter().map(|c| lines_for(c, size, w / cols as f64 - 10.0)).max().unwrap_or(1) as f64 * size * LINE + 8.0).sum::<f64>()
                     }
+                    // 按每段自己的字号估算（同一个框里大数字和小标签字号不同）
+                    None if !sh.paragraphs.is_empty() => sh.paragraphs.iter().map(|(t, sz)| {
+                        let sz = sz.unwrap_or(size);
+                        lines_for(t, sz, w - 14.4) as f64 * sz * LINE
+                    }).sum::<f64>() + 7.2,
                     None => sh.text.split('\n').map(|l| lines_for(l, size, w - 14.4) as f64 * size * LINE).sum::<f64>() + 7.2,
                 };
                 if need > h * 1.15 && sh.kind != "title" {
