@@ -1,0 +1,24 @@
+[package]
+name = "officepilot-cli"
+version = "0.1.0"
+edition = "2021"
+description = "officepilot 命令行：在本机创建、读取、修改、转换真实的 Word / Excel / PPT 文件"
+
+[[bin]]
+name = "officepilot"
+path = "src/main.rs"
+
+[dependencies]
+officepilot-engine = { path = "../engine" }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

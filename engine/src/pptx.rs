@@ -43,6 +43,9 @@ pub struct Shape {
     /// 位置与大小（磅）：x, y, 宽, 高
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame: Option<[f64; 4]>,
+    /// 文字里最大的字号（磅），没写字号时为空
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,7 +102,14 @@ fn shapes_of(xml: &Xml, tree: usize, out: &mut Vec<Shape>) {
         let shape_name = cnv.and_then(|c| xml.attr(c, "name")).unwrap_or_default();
         let ph = nv.and_then(|nv| xml.child(nv, "p:nvPr")).and_then(|p| xml.child(p, "p:ph"));
         let ph_type = ph.map(|ph| xml.attr(ph, "type").unwrap_or_else(|| "body".into()));
-        let mut shape = Shape { id, name: shape_name, kind: "shape".into(), text: String::new(), rows: None, frame: frame_of(xml, node) };
+        let font_size = xml
+            .descendants(node)
+            .into_iter()
+            .filter(|&d| matches!(xml.name(d), "a:rPr" | "a:defRPr" | "a:endParaRPr"))
+            .filter_map(|d| xml.attr(d, "sz")?.parse::<f64>().ok())
+            .map(|v| v / 100.0)
+            .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+        let mut shape = Shape { id, name: shape_name, kind: "shape".into(), text: String::new(), rows: None, frame: frame_of(xml, node), font_size };
         match name {
             "p:sp" => {
                 if let Some(tx) = xml.child(node, "p:txBody") {
@@ -110,7 +120,10 @@ fn shapes_of(xml: &Xml, tree: usize, out: &mut Vec<Shape>) {
                     Some("subTitle") => "subtitle",
                     Some("body") | Some("obj") => "body",
                     Some("dt") | Some("ftr") | Some("sldNum") | Some("hdr") => "footer",
-                    Some(_) => "body",
+                    // 备注页上的页面缩略图
+                    Some("sldImg") => "other",
+                    Some(_) if !shape.text.is_empty() => "body",
+                    Some(_) => "shape",
                     None if !shape.text.is_empty() => "text",
                     None => "shape",
                 }
