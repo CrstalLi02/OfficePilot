@@ -4,6 +4,7 @@
 //! XML 片段，zip 里其余条目按原始压缩数据复制，没改的部分逐字节不变。
 //! 一批操作要么全部成功，要么文件保持不变，出错时返回能指导修正的错误。
 
+pub mod build;
 pub mod docx;
 pub mod formula;
 pub mod markdown;

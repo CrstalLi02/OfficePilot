@@ -466,6 +466,39 @@ pub enum SheetOp {
         values: Option<Vec<Vec<serde_json::Value>>>,
     },
     RenameSheet { sheet: String, name: String },
+    /// 单元格格式：加粗、斜体、字色、底色、数字格式（如 0.00、#,##0、0%、yyyy-mm-dd）、对齐、自动换行
+    Format {
+        #[serde(default)]
+        sheet: Option<String>,
+        range: String,
+        #[serde(default)]
+        bold: Option<bool>,
+        #[serde(default)]
+        italic: Option<bool>,
+        #[serde(default)]
+        color: Option<String>,
+        #[serde(default)]
+        fill: Option<String>,
+        #[serde(default)]
+        number_format: Option<String>,
+        #[serde(default)]
+        align: Option<String>,
+        #[serde(default)]
+        wrap: Option<bool>,
+    },
+    /// 列宽（字符数），columns 如 "A" 或 "B:D"
+    ColumnWidth {
+        #[serde(default)]
+        sheet: Option<String>,
+        columns: String,
+        width: f64,
+    },
+    /// 冻结窗格：cell 左上方的行列固定，如 A2 冻结首行；"none" 取消
+    Freeze {
+        #[serde(default)]
+        sheet: Option<String>,
+        cell: String,
+    },
     AddChart {
         #[serde(default)]
         sheet: Option<String>,
@@ -497,6 +530,9 @@ impl SheetOp {
             Self::AddSheet { .. } => "add_sheet",
             Self::RenameSheet { .. } => "rename_sheet",
             Self::AddChart { .. } => "add_chart",
+            Self::Format { .. } => "format",
+            Self::ColumnWidth { .. } => "column_width",
+            Self::Freeze { .. } => "freeze",
         }
     }
 }
@@ -537,6 +573,8 @@ enum Write {
     New { value: Option<Value>, formula: Option<String> },
     Clear,
     Recalc(Value),
+    /// 不改内容（只为套用格式而确保单元格存在）
+    Keep,
 }
 
 struct ChartJob {
@@ -615,10 +653,14 @@ impl<'a> Book<'a> {
             };
         }
         match self.base_cell(idx, r, c) {
-            Some(cell) => match (&cell.formula, self.recalc.borrow().contains(&(idx, r, c))) {
-                (Some(f), true) => self.formula_value(idx, r, c, f).unwrap_or(cell.value),
-                _ => cell.value,
-            },
+            Some(cell) => {
+                // 需要重算的、或者没有缓存值的公式（有的程序只写公式不写结果）现场计算
+                let stale = self.recalc.borrow().contains(&(idx, r, c)) || cell.value == Value::Empty;
+                match (&cell.formula, stale) {
+                    (Some(f), true) => self.formula_value(idx, r, c, f).unwrap_or(cell.value),
+                    _ => cell.value,
+                }
+            }
             None => Value::Empty,
         }
     }
@@ -694,7 +736,7 @@ fn recalc_cell(xml: &Xml, c: usize, p: &str, value: &Value) -> String {
 }
 
 /// 把写入合并进工作表 XML
-fn rewrite_sheet(text: &str, writes: &BTreeMap<(u32, u32), Write>) -> Result<String> {
+fn rewrite_sheet(text: &str, writes: &BTreeMap<(u32, u32), Write>, restyle: &BTreeMap<(u32, u32), u32>) -> Result<String> {
     if writes.is_empty() {
         return Ok(text.to_string());
     }
@@ -763,6 +805,17 @@ fn rewrite_sheet(text: &str, writes: &BTreeMap<(u32, u32), Write>) -> Result<Str
                         cells.insert(c, recalc_cell(&xml, node, &p, v));
                     }
                 }
+                Write::Keep => {}
+            }
+            if let Some(&s) = restyle.get(&(*r, c)) {
+                let restyled = match cells.get(&c) {
+                    Some(outer) => {
+                        let end = outer.find('>').map(|i| i + 1).unwrap_or(outer.len());
+                        format!("{}{}", xml::set_attr(&outer[..end], "s", &s.to_string()), &outer[end..])
+                    }
+                    None => format!(r#"<{p}c r="{name}" s="{s}"/>"#),
+                };
+                cells.insert(c, restyled);
             }
         }
         let body: String = cells.into_values().collect::<String>() + &trailing;
@@ -833,6 +886,9 @@ impl Workbook {
         let mut overlay: HashMap<usize, BTreeMap<(u32, u32), Option<Input>>> = HashMap::new();
         let mut changes: Vec<Change> = Vec::new();
         let mut charts: Vec<ChartJob> = Vec::new();
+        let mut style_over: HashMap<usize, BTreeMap<(u32, u32), u32>> = HashMap::new();
+        let mut sheet_edits: Vec<(usize, SheetEdit)> = Vec::new();
+        let mut style_book: Option<StyleBook> = None;
         let mut wb_text = self.wb_text.clone();
         let mut structure_changed = false;
 
@@ -947,6 +1003,55 @@ impl Workbook {
                     let old = std::mem::replace(&mut self.sheets[idx].name, new_name.clone());
                     changes.push(Change { op: i, kind: name.into(), target: old, before: None, after: Some(new_name) });
                 }
+                SheetOp::Format { sheet, range, bold, italic, color, fill, number_format, align, wrap: wrap_text } => {
+                    let idx = self.sheet_index(sheet.as_deref()).map_err(wrap)?;
+                    let ((r1, c1), (r2, c2)) = parse_range(&split_sheet(range).1).ok_or_else(|| op_err(i, name, format!("区域“{range}”格式不对，示例：A1:D1")))?;
+                    if (r2 - r1 + 1) as u64 * (c2 - c1 + 1) as u64 > 200_000 {
+                        return Err(op_err(i, name, "区域太大（超过 20 万个单元格）"));
+                    }
+                    let spec = FormatSpec { bold: *bold, italic: *italic, color: color.clone(), fill: fill.clone(), number_format: number_format.clone(), align: align.clone(), wrap: *wrap_text };
+                    spec.validate().map_err(|e| op_err(i, name, e))?;
+                    if style_book.is_none() {
+                        style_book = Some(StyleBook::load(self)?);
+                    }
+                    let book = style_book.as_mut().unwrap();
+                    let cells = self.cells(idx)?;
+                    let entry = style_over.entry(idx).or_default();
+                    let mut cache: HashMap<u32, u32> = HashMap::new();
+                    for r in r1..=r2 {
+                        for c in c1..=c2 {
+                            let base = entry.get(&(r, c)).copied().or_else(|| cells.get(&(r, c)).and_then(|x| x.style)).unwrap_or(0);
+                            let derived = match cache.get(&base) {
+                                Some(&d) => d,
+                                None => {
+                                    let d = book.derive(base, &spec)?;
+                                    cache.insert(base, d);
+                                    d
+                                }
+                            };
+                            entry.insert((r, c), derived);
+                        }
+                    }
+                    changes.push(Change { op: i, kind: name.into(), target: format!("{}!{range}", self.sheets[idx].name), before: None, after: Some(spec.describe()) });
+                }
+                SheetOp::ColumnWidth { sheet, columns, width } => {
+                    let idx = self.sheet_index(sheet.as_deref()).map_err(wrap)?;
+                    let (a, b) = columns.split_once(':').unwrap_or((columns.as_str(), columns.as_str()));
+                    let (Some(a), Some(b)) = (formula::col_to_index(a.trim().trim_matches('$')), formula::col_to_index(b.trim().trim_matches('$'))) else {
+                        return Err(op_err(i, name, format!("列“{columns}”格式不对，示例：A 或 B:D")));
+                    };
+                    if !(0.5..=255.0).contains(width) {
+                        return Err(op_err(i, name, "列宽要在 0.5–255 之间（单位：字符）"));
+                    }
+                    sheet_edits.push((idx, SheetEdit::Width(a.min(b), a.max(b), *width)));
+                    changes.push(Change { op: i, kind: name.into(), target: format!("{}!{columns}", self.sheets[idx].name), before: None, after: Some(format!("列宽 {width}")) });
+                }
+                SheetOp::Freeze { sheet, cell } => {
+                    let idx = self.sheet_index(sheet.as_deref()).map_err(wrap)?;
+                    let at = if cell.trim().eq_ignore_ascii_case("none") { None } else { Some(parse_cell(cell).ok_or_else(|| op_err(i, name, format!("单元格“{cell}”格式不对，A2 表示冻结首行")))?) };
+                    sheet_edits.push((idx, SheetEdit::Freeze(at)));
+                    changes.push(Change { op: i, kind: name.into(), target: self.sheets[idx].name.clone(), before: None, after: Some(format!("冻结 {cell}")) });
+                }
                 SheetOp::AddChart { sheet, chart_type, title, categories, series, anchor, width, height } => {
                     let idx = self.sheet_index(sheet.as_deref()).map_err(wrap)?;
                     let kind = match chart_type.to_lowercase().as_str() {
@@ -1035,12 +1140,31 @@ impl Workbook {
         drop(book);
 
         let touched_cells = !writes.is_empty();
+        for (idx, styled) in &style_over {
+            let w = writes.entry(*idx).or_default();
+            for k in styled.keys() {
+                w.entry(*k).or_insert(Write::Keep);
+            }
+        }
+        let empty_styles = BTreeMap::new();
         for (idx, w) in &writes {
             let part = self.sheets[*idx].part.clone();
             let text = self.pkg.read_str(&part)?;
-            let updated = rewrite_sheet(&text, w)?;
+            let updated = rewrite_sheet(&text, w, style_over.get(idx).unwrap_or(&empty_styles))?;
             Xml::parse(&updated).map_err(|e| EngineError::Format(format!("内部错误：工作表改写后无法解析（{e}），文件未改动")))?;
             self.pkg.write(&part, updated);
+        }
+        for (idx, edit) in &sheet_edits {
+            let part = self.sheets[*idx].part.clone();
+            let text = self.pkg.read_str(&part)?;
+            let updated = match edit {
+                SheetEdit::Width(a, b, w) => set_column_width(&text, *a, *b, *w)?,
+                SheetEdit::Freeze(at) => set_freeze(&text, *at)?,
+            };
+            self.pkg.write(&part, updated);
+        }
+        if let Some(book) = style_book {
+            book.save(self)?;
         }
         for (job, xml_text) in charts.iter().zip(chart_xml) {
             self.insert_chart(job, xml_text).map_err(|e| op_err(job.op, "add_chart", e.to_string()))?;
@@ -1325,6 +1449,359 @@ fn value_text(v: &Value) -> String {
     }
 }
 
+// ───────────────────────── 格式、列宽、冻结 ─────────────────────────
+
+enum SheetEdit {
+    Width(u32, u32, f64),
+    Freeze(Option<(u32, u32)>),
+}
+
+#[derive(Debug, Clone, Default)]
+struct FormatSpec {
+    bold: Option<bool>,
+    italic: Option<bool>,
+    color: Option<String>,
+    fill: Option<String>,
+    number_format: Option<String>,
+    align: Option<String>,
+    wrap: Option<bool>,
+}
+
+fn argb(color: &str) -> Option<String> {
+    let hex = color.trim().trim_start_matches('#');
+    match hex.len() {
+        6 if hex.chars().all(|c| c.is_ascii_hexdigit()) => Some(format!("FF{}", hex.to_uppercase())),
+        8 if hex.chars().all(|c| c.is_ascii_hexdigit()) => Some(hex.to_uppercase()),
+        _ => None,
+    }
+}
+
+impl FormatSpec {
+    fn validate(&self) -> std::result::Result<(), String> {
+        for c in [&self.color, &self.fill].into_iter().flatten() {
+            if argb(c).is_none() && !c.eq_ignore_ascii_case("none") {
+                return Err(format!("颜色“{c}”格式不对，用 #RRGGBB"));
+            }
+        }
+        if let Some(a) = &self.align {
+            if !matches!(a.as_str(), "left" | "center" | "right" | "general") {
+                return Err("align 只能是 left / center / right / general".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if self.bold == Some(true) {
+            parts.push("加粗".to_string());
+        }
+        if self.italic == Some(true) {
+            parts.push("斜体".to_string());
+        }
+        if let Some(c) = &self.color {
+            parts.push(format!("字色 {c}"));
+        }
+        if let Some(c) = &self.fill {
+            parts.push(format!("底色 {c}"));
+        }
+        if let Some(f) = &self.number_format {
+            parts.push(format!("格式 {f}"));
+        }
+        if let Some(a) = &self.align {
+            parts.push(format!("对齐 {a}"));
+        }
+        if self.wrap == Some(true) {
+            parts.push("自动换行".to_string());
+        }
+        parts.join("、")
+    }
+}
+
+fn builtin_num_fmt(code: &str) -> Option<u32> {
+    Some(match code {
+        "General" | "general" => 0,
+        "0" => 1,
+        "0.00" => 2,
+        "#,##0" => 3,
+        "#,##0.00" => 4,
+        "0%" => 9,
+        "0.00%" => 10,
+        "0.00E+00" => 11,
+        "mm-dd-yy" => 14,
+        "h:mm" => 20,
+        "@" => 49,
+        _ => return None,
+    })
+}
+
+/// 样式表（xl/styles.xml）：按需追加字体、填充、数字格式和单元格格式，相同的复用
+struct StyleBook {
+    part: String,
+    text: String,
+}
+
+const FONT_ORDER: &[&str] = &["b", "i", "strike", "condense", "extend", "outline", "shadow", "u", "vertAlign", "sz", "color", "name", "family", "charset", "scheme"];
+
+impl StyleBook {
+    fn load(wb: &mut Workbook) -> Result<Self> {
+        let part = match wb.pkg.target_of(&wb.wb_part, "/styles")? {
+            Some(p) if wb.pkg.has(&p) => p,
+            _ => {
+                let part = "xl/styles.xml".to_string();
+                let tpl = crate::build::templates::xlsx(&[])?;
+                let tpl_pkg = Package::open(tpl)?;
+                wb.pkg.write(&part, tpl_pkg.read(&part)?);
+                wb.pkg.content_type_override(&part, "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml")?;
+                wb.pkg.add_rel(&wb.wb_part.clone(), "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", &Package::relative(&wb.wb_part, &part), false)?;
+                part
+            }
+        };
+        let text = wb.pkg.read_str(&part)?;
+        Ok(Self { part, text })
+    }
+
+    fn save(self, wb: &mut Workbook) -> Result<()> {
+        Xml::parse(&self.text)?;
+        wb.pkg.write(&self.part, self.text);
+        Ok(())
+    }
+
+    /// 列表元素（fonts / fills / cellXfs / numFmts）的子元素原文
+    fn list(&self, name: &str, item: &str) -> Result<Vec<String>> {
+        let xml = Xml::parse(&self.text)?;
+        let root = xml.document_element().unwrap();
+        Ok(match child_local(&xml, root, name) {
+            Some(l) => children_local(&xml, l, item).map(|c| xml.outer(c).to_string()).collect(),
+            None => Vec::new(),
+        })
+    }
+
+    /// 在列表末尾追加（相同的复用），返回下标
+    fn add(&mut self, name: &str, item: &str, outer: String, before: &[&str]) -> Result<u32> {
+        let existing = self.list(name, item)?;
+        if let Some(i) = existing.iter().position(|e| *e == outer) {
+            return Ok(i as u32);
+        }
+        let xml = Xml::parse(&self.text)?;
+        let root = xml.document_element().unwrap();
+        let p = prefix_of(xml.name(root));
+        let mut splice = Splice::new();
+        match child_local(&xml, root, name) {
+            Some(l) => {
+                let n = xml.node(l);
+                let count = (existing.len() + 1).to_string();
+                if n.self_closing {
+                    splice.replace(n.start, n.end, format!("{}{outer}</{}>", xml::set_attr(&xml.open_tag_expanded(l), "count", &count), xml.name(l)));
+                } else {
+                    splice.replace(n.start, n.open_end, xml::set_attr(xml.open_tag(l), "count", &count));
+                    splice.insert(n.close_start, outer);
+                }
+            }
+            None => {
+                let at = xml.children(root).iter().copied().find(|&c| before.contains(&local(xml.name(c)))).map(|c| xml.node(c).start).unwrap_or(xml.node(root).close_start);
+                splice.insert(at, format!(r#"<{p}{name} count="1">{outer}</{p}{name}>"#));
+            }
+        }
+        self.text = splice.apply(&self.text)?;
+        Ok(existing.len() as u32)
+    }
+
+    fn num_fmt_id(&mut self, code: &str) -> Result<u32> {
+        let code = match code.to_lowercase().as_str() {
+            "percent" | "百分比" => "0.00%".to_string(),
+            "integer" | "整数" => "#,##0".to_string(),
+            "number" | "数字" => "#,##0.00".to_string(),
+            "currency" | "货币" => "¥#,##0.00".to_string(),
+            "date" | "日期" => "yyyy-mm-dd".to_string(),
+            "text" | "文本" => "@".to_string(),
+            _ => code.to_string(),
+        };
+        if let Some(id) = builtin_num_fmt(&code) {
+            return Ok(id);
+        }
+        let xml = Xml::parse(&self.text)?;
+        let root = xml.document_element().unwrap();
+        let mut max = 163;
+        if let Some(l) = child_local(&xml, root, "numFmts") {
+            for f in children_local(&xml, l, "numFmt") {
+                let id: u32 = xml.attr(f, "numFmtId").and_then(|v| v.parse().ok()).unwrap_or(0);
+                if xml.attr(f, "formatCode").as_deref() == Some(code.as_str()) {
+                    return Ok(id);
+                }
+                max = max.max(id);
+            }
+        }
+        let p = prefix_of(xml.name(root));
+        drop(xml);
+        let id = max + 1;
+        self.add("numFmts", "numFmt", format!(r#"<{p}numFmt numFmtId="{id}" formatCode="{}"/>"#, xml::escape_attr(&code)), &["fonts", "fills", "borders", "cellStyleXfs", "cellXfs"])?;
+        Ok(id)
+    }
+
+    fn derive(&mut self, base: u32, spec: &FormatSpec) -> Result<u32> {
+        let xfs = self.list("cellXfs", "xf")?;
+        let base_xf = xfs.get(base as usize).or_else(|| xfs.first()).cloned().unwrap_or_else(|| r#"<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>"#.into());
+        let bx = Xml::parse(&base_xf)?;
+        let xf = bx.document_element().unwrap();
+        let p = prefix_of(bx.name(xf));
+        let get = |k: &str| bx.attr(xf, k).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+        let (mut num, mut font, mut fill, border) = (get("numFmtId"), get("fontId"), get("fillId"), get("borderId"));
+        let mut align_attrs: Vec<(String, String)> = child_local(&bx, xf, "alignment")
+            .map(|a| {
+                let tag = bx.open_tag(a);
+                ["horizontal", "vertical", "wrapText", "indent", "textRotation"].iter().filter_map(|k| xml::attr_in(tag, k).map(|v| (k.to_string(), v))).collect()
+            })
+            .unwrap_or_default();
+
+        if spec.bold.is_some() || spec.italic.is_some() || spec.color.is_some() {
+            let fonts = self.list("fonts", "font")?;
+            let base_font = fonts.get(font as usize).or_else(|| fonts.first()).cloned().unwrap_or_else(|| format!(r#"<{p}font><{p}sz val="11"/><{p}name val="Calibri"/></{p}font>"#));
+            let fx = Xml::parse(&base_font)?;
+            let f = fx.document_element().unwrap();
+            let mut kids: Vec<(String, String)> = fx.children(f).iter().map(|&c| (local(fx.name(c)).to_string(), fx.outer(c).to_string())).collect();
+            let mut set = |name: &str, on: Option<String>| {
+                kids.retain(|(n, _)| n != name);
+                if let Some(x) = on {
+                    kids.push((name.to_string(), x));
+                }
+            };
+            if let Some(b) = spec.bold {
+                set("b", b.then(|| format!("<{p}b/>")));
+            }
+            if let Some(i) = spec.italic {
+                set("i", i.then(|| format!("<{p}i/>")));
+            }
+            if let Some(c) = &spec.color {
+                set("color", argb(c).map(|c| format!(r#"<{p}color rgb="{c}"/>"#)));
+            }
+            kids.sort_by_key(|(n, _)| FONT_ORDER.iter().position(|o| o == n).unwrap_or(FONT_ORDER.len()));
+            let new_font = format!("<{p}font>{}</{p}font>", kids.into_iter().map(|(_, o)| o).collect::<String>());
+            font = self.add("fonts", "font", new_font, &["fills", "borders", "cellStyleXfs", "cellXfs"])?;
+        }
+        if let Some(c) = &spec.fill {
+            let outer = match argb(c) {
+                Some(c) => format!(r#"<{p}fill><{p}patternFill patternType="solid"><{p}fgColor rgb="{c}"/><{p}bgColor indexed="64"/></{p}patternFill></{p}fill>"#),
+                None => format!(r#"<{p}fill><{p}patternFill patternType="none"/></{p}fill>"#),
+            };
+            fill = if argb(c).is_none() { 0 } else { self.add("fills", "fill", outer, &["borders", "cellStyleXfs", "cellXfs"])? };
+        }
+        if let Some(code) = &spec.number_format {
+            num = self.num_fmt_id(code)?;
+        }
+        let mut set_align = |k: &str, v: Option<String>| {
+            align_attrs.retain(|(n, _)| n != k);
+            if let Some(v) = v {
+                align_attrs.push((k.to_string(), v));
+            }
+        };
+        if let Some(a) = &spec.align {
+            set_align("horizontal", (a != "general").then(|| a.clone()));
+        }
+        if let Some(w) = spec.wrap {
+            set_align("wrapText", w.then(|| "1".to_string()));
+        }
+        let alignment = if align_attrs.is_empty() {
+            String::new()
+        } else {
+            format!("<{p}alignment{}/>", align_attrs.iter().map(|(k, v)| format!(r#" {k}="{v}""#)).collect::<String>())
+        };
+        let applies = format!(
+            "{}{}{}{}",
+            if num != 0 { r#" applyNumberFormat="1""# } else { "" },
+            if font != 0 { r#" applyFont="1""# } else { "" },
+            if fill != 0 { r#" applyFill="1""# } else { "" },
+            if alignment.is_empty() { "" } else { r#" applyAlignment="1""# }
+        );
+        let new_xf = if alignment.is_empty() {
+            format!(r#"<{p}xf numFmtId="{num}" fontId="{font}" fillId="{fill}" borderId="{border}" xfId="0"{applies}/>"#)
+        } else {
+            format!(r#"<{p}xf numFmtId="{num}" fontId="{font}" fillId="{fill}" borderId="{border}" xfId="0"{applies}>{alignment}</{p}xf>"#)
+        };
+        self.add("cellXfs", "xf", new_xf, &["cellStyles", "dxfs", "tableStyles", "colors", "extLst"])
+    }
+}
+
+/// 设置列宽：拆开与目标范围重叠的已有 col 元素
+fn set_column_width(text: &str, a: u32, b: u32, width: f64) -> Result<String> {
+    let xml = Xml::parse(text)?;
+    let root = xml.document_element().unwrap();
+    let p = prefix_of(xml.name(root));
+    let mut entries: Vec<(u32, u32, String)> = Vec::new();
+    let cols = child_local(&xml, root, "cols");
+    if let Some(cols) = cols {
+        for c in children_local(&xml, cols, "col") {
+            let min: u32 = xml.attr(c, "min").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let max: u32 = xml.attr(c, "max").and_then(|v| v.parse().ok()).unwrap_or(min);
+            let tag = xml.open_tag(c).to_string();
+            if max < a || min > b {
+                entries.push((min, max, tag));
+                continue;
+            }
+            if min < a {
+                entries.push((min, a - 1, xml::set_attr(&tag, "max", &(a - 1).to_string())));
+            }
+            if max > b {
+                entries.push((b + 1, max, xml::set_attr(&tag, "min", &(b + 1).to_string())));
+            }
+        }
+    }
+    entries.push((a, b, format!(r#"<{p}col min="{a}" max="{b}" width="{width}" customWidth="1"/>"#)));
+    entries.sort_by_key(|e| e.0);
+    let body: String = entries.into_iter().map(|e| if e.2.ends_with("/>") { e.2 } else { format!("{}</{p}col>", e.2) }).collect();
+    let mut splice = Splice::new();
+    match cols {
+        Some(cols) => splice.replace(xml.node(cols).start, xml.node(cols).end, format!("<{p}cols>{body}</{p}cols>")),
+        None => {
+            let data = child_local(&xml, root, "sheetData").ok_or_else(|| EngineError::Format("工作表缺少 sheetData".into()))?;
+            splice.insert(xml.node(data).start, format!("<{p}cols>{body}</{p}cols>"));
+        }
+    }
+    splice.apply(text)
+}
+
+/// 冻结窗格（None 取消）
+fn set_freeze(text: &str, at: Option<(u32, u32)>) -> Result<String> {
+    let xml = Xml::parse(text)?;
+    let root = xml.document_element().unwrap();
+    let p = prefix_of(xml.name(root));
+    let pane = at.filter(|&(r, c)| r > 1 || c > 1).map(|(r, c)| {
+        let x = if c > 1 { format!(r#" xSplit="{}""#, c - 1) } else { String::new() };
+        let y = if r > 1 { format!(r#" ySplit="{}""#, r - 1) } else { String::new() };
+        let active = match (r > 1, c > 1) {
+            (true, true) => "bottomRight",
+            (true, false) => "bottomLeft",
+            _ => "topRight",
+        };
+        format!(r#"<{p}pane{x}{y} topLeftCell="{}" activePane="{active}" state="frozen"/><{p}selection pane="{active}"/>"#, cell_name(r, c))
+    });
+    let mut splice = Splice::new();
+    match child_local(&xml, root, "sheetViews").and_then(|v| child_local(&xml, v, "sheetView")) {
+        Some(view) => {
+            for &c in xml.children(view) {
+                if matches!(local(xml.name(c)), "pane" | "selection") {
+                    splice.replace(xml.node(c).start, xml.node(c).end, "");
+                }
+            }
+            if let Some(pane) = pane {
+                let n = xml.node(view);
+                if n.self_closing {
+                    splice.replace(n.start, n.end, format!("{}{pane}</{}>", xml.open_tag_expanded(view), xml.name(view)));
+                } else {
+                    splice.insert(n.open_end, pane);
+                }
+            }
+        }
+        None => {
+            if let Some(pane) = pane {
+                let at = ["sheetFormatPr", "cols", "sheetData"].iter().find_map(|n| child_local(&xml, root, n)).map(|c| xml.node(c).start).unwrap_or(xml.node(root).close_start);
+                splice.insert(at, format!(r#"<{p}sheetViews><{p}sheetView workbookViewId="0">{pane}</{p}sheetView></{p}sheetViews>"#));
+            }
+        }
+    }
+    splice.apply(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1415,5 +1892,32 @@ mod tests {
         let bad: Vec<SheetOp> = serde_json::from_str(r#"[{"op":"set","sheet":"Nope","cell":"A1","value":1}]"#).unwrap();
         let err = wb.apply(&bad).unwrap_err().to_string();
         assert!(err.contains("找不到工作表“Nope”") && err.contains("Orders"), "{err}");
+    }
+
+    #[test]
+    fn formats_widths_and_freeze() {
+        let tpl = crate::build::templates::xlsx(&["数据".into()]).unwrap();
+        let mut wb = Workbook::open(tpl).unwrap();
+        let ops: Vec<SheetOp> = serde_json::from_str(r##"[
+            {"op":"set_range","start":"A1","values":[["地区","占比"],["华东",0.25],["华北",0.75]]},
+            {"op":"format","range":"A1:B1","bold":true,"fill":"#DBEAFE","align":"center"},
+            {"op":"format","range":"B2:B3","number_format":"0.0%"},
+            {"op":"column_width","columns":"A:B","width":18},
+            {"op":"freeze","cell":"A2"}
+        ]"##).unwrap();
+        wb.apply(&ops).unwrap();
+        let saved = wb.save().unwrap();
+        let pkg = Package::open(saved.clone()).unwrap();
+        let styles = pkg.read_str("xl/styles.xml").unwrap();
+        assert!(styles.contains(r#"formatCode="0.0%""#), "{styles}");
+        assert!(styles.contains(r#"<fgColor rgb="FFDBEAFE"/>"#));
+        let sheet = pkg.read_str("xl/worksheets/sheet1.xml").unwrap();
+        assert!(sheet.contains(r#"<col min="1" max="2" width="18" customWidth="1"/>"#), "{sheet}");
+        assert!(sheet.contains(r#"state="frozen""#));
+        assert!(sheet.contains(r#"<c r="A1" t="inlineStr" s="2">"#), "{sheet}");
+        // 同一格式复用同一个 xf
+        assert!(sheet.contains(r#"<c r="B1" t="inlineStr" s="2">"#));
+        let wb2 = Workbook::open(saved).unwrap();
+        assert_eq!(wb2.cells(0).unwrap()[&(2, 2)].value, Value::Num(0.25));
     }
 }
