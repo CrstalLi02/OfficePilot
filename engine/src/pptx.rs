@@ -46,6 +46,9 @@ pub struct Shape {
     /// 文字里最大的字号（磅），没写字号时为空
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_size: Option<f64>,
+    /// 每段文字及其字号（版面检查用）
+    #[serde(skip)]
+    pub paragraphs: Vec<(String, Option<f64>)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,7 +112,17 @@ fn shapes_of(xml: &Xml, tree: usize, out: &mut Vec<Shape>) {
             .filter_map(|d| xml.attr(d, "sz")?.parse::<f64>().ok())
             .map(|v| v / 100.0)
             .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
-        let mut shape = Shape { id, name: shape_name, kind: "shape".into(), text: String::new(), rows: None, frame: frame_of(xml, node), font_size };
+        let paragraphs: Vec<(String, Option<f64>)> = match xml.child(node, "p:txBody") {
+            Some(tx) => text_edit::paragraphs(xml, tx, &DRAWING)
+                .into_iter()
+                .map(|p| {
+                    let size = xml.descendants(p).into_iter().filter(|&d| matches!(xml.name(d), "a:rPr" | "a:endParaRPr")).filter_map(|d| xml.attr(d, "sz")?.parse::<f64>().ok()).map(|v| v / 100.0).fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+                    (text_edit::paragraph_text(xml, p, &DRAWING), size)
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        let mut shape = Shape { id, name: shape_name, kind: "shape".into(), text: String::new(), rows: None, frame: frame_of(xml, node), font_size, paragraphs };
         match name {
             "p:sp" => {
                 if let Some(tx) = xml.child(node, "p:txBody") {

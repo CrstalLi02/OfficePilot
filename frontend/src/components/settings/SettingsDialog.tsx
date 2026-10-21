@@ -1,6 +1,7 @@
-import { Bot, Check, KeyRound, MessageSquare, Plus, Puzzle, Trash2, X } from 'lucide-react'
+import { Blocks, Bot, Check, KeyRound, MessageSquare, Plus, Puzzle, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ImChannelsPanel } from './ImChannelsPanel'
+import { IntegrationsPanel } from './IntegrationsPanel'
 import { McpPluginsPanel } from './McpPluginsPanel'
 import type { AppSettings, LLMProfile } from '@/types'
 
@@ -30,7 +31,7 @@ function getProfileKeys(profile: LLMProfile) {
 }
 
 export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDialogProps) {
-  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im'>('llm')
+  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im' | 'integrations'>('llm')
   const [draft, setDraft] = useState<AppSettings | null>(settings)
   const [saving, setSaving] = useState(false)
 
@@ -123,6 +124,7 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
               ['llm', '模型服务', Bot],
               ['mcp', '插件（MCP）', Puzzle],
               ['im', 'IM 接入', MessageSquare],
+              ['integrations', '集成', Blocks],
             ].map(([key, label, Icon]: any) => (
               <button
                 key={key}
@@ -302,8 +304,10 @@ export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDial
 
           {section === 'mcp' && <McpPluginsPanel />}
 
+          {section === 'integrations' && <IntegrationsPanel />}
+
           {/* 插件与 IM 接入的修改即时保存，不需要底部的保存按钮 */}
-          {section !== 'im' && section !== 'mcp' && <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
+          {section !== 'im' && section !== 'mcp' && section !== 'integrations' && <div className="mt-6 flex items-center justify-end gap-3 border-t border-black/[0.06] pt-5">
             <button onClick={onClose} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-surface-600 hover:bg-surface-50">
               取消
             </button>

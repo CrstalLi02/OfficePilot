@@ -4,14 +4,10 @@
 //! 编辑是原子的：一批操作有任何一个不合法，文件保持原样，错误信息说明如何修正。
 //! 命令行里不调用任何大模型：思考交给 Agent，命令行只负责构建和检查。
 
-mod convert;
-mod deck_cmd;
-mod guides;
-mod io;
-mod office;
+use officepilot_cli::{convert, deck_cmd, guides, io, mcp, office, Out};
 
 use clap::{Parser, Subcommand};
-use serde_json::{json, Value};
+use serde_json::json;
 
 #[derive(Parser)]
 #[command(name = "officepilot", version, about = "创建、读取、修改、转换 Word / Excel / PPT 文件（原格式，只改动涉及的部分）")]
@@ -115,6 +111,24 @@ enum Command {
     Capabilities,
     /// 交给 OfficePilot 桌面版或系统默认程序打开
     Open { file: String },
+    /// 作为 MCP 服务端运行（默认 stdio；--http 端口 提供 Streamable HTTP）
+    Mcp {
+        /// 用 HTTP 提供服务的端口
+        #[arg(long)]
+        http: Option<u16>,
+        /// HTTP 监听地址；不是本机地址时必须设置 --token
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// HTTP 访问令牌（Authorization: Bearer …）；也可用环境变量 OFFICEPILOT_MCP_TOKEN
+        #[arg(long)]
+        token: Option<String>,
+        /// 工作目录（stdio：相对路径的基准；HTTP：文件仓库位置）
+        #[arg(long)]
+        root: Option<String>,
+        /// 对外地址（反向代理后面时设置），默认 http://host:端口
+        #[arg(long)]
+        public_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -164,50 +178,7 @@ enum DeckCmd {
     Status { dir: String },
 }
 
-/// 命令结果：给人看的摘要 + 给程序的 JSON
-pub struct Done {
-    pub summary: String,
-    pub data: Value,
-    /// 检查没通过等“成功执行但结果不合格”的情况
-    pub failed: bool,
-}
 
-impl Done {
-    pub fn ok(summary: impl Into<String>, data: Value) -> Self {
-        Self { summary: summary.into(), data, failed: false }
-    }
-}
-
-/// 失败：说明原因与修正建议
-#[derive(Debug)]
-pub struct Fail {
-    pub message: String,
-    pub hint: Option<String>,
-}
-
-impl Fail {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), hint: None }
-    }
-    pub fn hint(mut self, hint: impl Into<String>) -> Self {
-        self.hint = Some(hint.into());
-        self
-    }
-}
-
-impl From<officepilot_engine::EngineError> for Fail {
-    fn from(e: officepilot_engine::EngineError) -> Self {
-        Fail::new(e.to_string())
-    }
-}
-
-impl From<std::io::Error> for Fail {
-    fn from(e: std::io::Error) -> Self {
-        Fail::new(e.to_string())
-    }
-}
-
-pub type Out = Result<Done, Fail>;
 
 fn run(cli: Cli) -> Out {
     match cli.command {
@@ -231,11 +202,27 @@ fn run(cli: Cli) -> Out {
         Command::Guide { topic } => guides::guide(topic.as_deref()),
         Command::Capabilities => guides::capabilities(),
         Command::Open { file } => io::open(&file),
+        Command::Mcp { .. } => unreachable!(),
     }
 }
 
 fn main() {
     let cli = Cli::parse();
+    if let Command::Mcp { http, host, token, root, public_url } = &cli.command {
+        let root = root.clone().map(std::path::PathBuf::from).or_else(|| std::env::current_dir().ok()).unwrap_or_default();
+        let result = match http {
+            None => mcp::stdio::serve(mcp::Workspace::local(root)).map_err(|e| e.to_string()),
+            Some(port) => {
+                let token = token.clone().or_else(|| std::env::var("OFFICEPILOT_MCP_TOKEN").ok()).filter(|t| !t.trim().is_empty());
+                mcp::http::serve(mcp::http::Options { host: host.clone(), port: *port, token, root, public_url: public_url.clone() })
+            }
+        };
+        if let Err(e) = result {
+            eprintln!("错误：{e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let json_mode = cli.json;
     let code = match run(cli) {
         Ok(done) => {

@@ -97,6 +97,10 @@ fn configure_env(root: &Path, port: u16) -> anyhow::Result<()> {
         ("WALIOFFICE_LOCAL_FOLDERS", "1".into()),
         ("PATH", desktop_path()),
     ];
+    // 随安装包附带的 officepilot 命令行（sidecar，与主程序在同一目录）
+    if let Some(cli) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(if cfg!(windows) { "officepilot.exe" } else { "officepilot" }))).filter(|p| p.is_file()) {
+        std::env::set_var("OFFICEPILOT_CLI", cli);
+    }
     for (key, value) in vars {
         std::env::set_var(key, value);
     }

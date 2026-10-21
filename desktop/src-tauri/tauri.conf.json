@@ -14,7 +14,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Productivity",
     "shortDescription": "在本机运行的 AI 办公助手",
     "icon": [
@@ -26,6 +29,9 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
-    }
+    },
+    "externalBin": [
+      "binaries/officepilot"
+    ]
   }
 }

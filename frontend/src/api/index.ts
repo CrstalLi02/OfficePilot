@@ -553,3 +553,32 @@ export const chatApi = {
     await readSse(response, onEvent);
   },
 };
+
+export interface IntegrationAgent {
+  id: string
+  name: string
+  detected: boolean
+  dir?: string | null
+  installed: boolean
+  up_to_date: boolean
+  /** 已有同名 skill，但不是 OfficePilot 安装的 */
+  foreign?: boolean
+}
+
+export interface IntegrationsOverview {
+  /** 能否写入本机目录（桌面版） */
+  local: boolean
+  skill_version: string
+  agents: IntegrationAgent[]
+  cli: { path?: string | null; link?: string | null; linked: boolean }
+  mcp: { claude_code: string; json: string; http: string }
+}
+
+export const integrationsApi = {
+  overview: () => api.get<IntegrationsOverview>('/integrations'),
+  install: (agent: string) => api.post<{ installed: boolean; dir: string }>(`/integrations/skill/${agent}`),
+  uninstall: (agent: string) => api.delete(`/integrations/skill/${agent}`),
+  skillZip: () => api.get<Blob>('/integrations/skill.zip', { responseType: 'blob' }),
+  linkCli: (replace = false) => api.post<{ linked: boolean; exists?: boolean; path: string; on_path?: boolean }>('/integrations/cli/link', { replace }),
+  unlinkCli: () => api.delete('/integrations/cli/link'),
+}
