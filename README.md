@@ -316,3 +316,12 @@ Dockerfile 采用三阶段构建：
 ## 📜 License
 
 MIT
+
+## 编辑器套件（suite/）
+
+`suite/` 是 git submodule，指向 [CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite)：基于 [GenOffice](https://github.com/genspark-ai/genoffice)（Mainfunc, Inc.，Apache-2.0）修改的桌面编辑器套件（文档、表格、幻灯片、PDF、Markdown、HTML）。编辑器代码主要来自 GenOffice；OfficePilot 的改动见 `suite/OFFICEPILOT_CHANGES.md`。GenOffice 与 Genspark 是 Mainfunc, Inc. 的商标，本项目与其无隶属关系。
+
+```bash
+git submodule update --init suite
+cd suite && npm ci && npm run native:build -w @genoffice/sheets && npm run build:all
+```
