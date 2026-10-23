@@ -491,7 +491,7 @@ impl OfficeTool for EditorOpenTool {
             Err(e) => return ToolResult::err(format!("准备文件失败：{e}")),
         };
         let opened = if target.is_empty() {
-            match crate::editor::suite_app() {
+            match crate::editor::editor_app() {
                 Some(app) => crate::editor::launch(&app, &working).await.map_err(|e| e.to_string()),
                 None => Err("没有找到编辑器套件".into()),
             }

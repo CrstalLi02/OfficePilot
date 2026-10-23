@@ -1,5 +1,9 @@
 # OfficePilot 桌面版
 
+> **新版桌面版**由编辑器套件外壳（`suite/apps/shell`）和 OfficePilot 服务组成，打开就是编辑器主页（最近文件、文件树、标签页、编辑器），左侧“智能助手”进入 OfficePilot 的对话、任务和设置。服务作为后台进程运行（`walioffice desktop`），数据目录与下面的 Tauri 版相同，安装后直接替换旧版。打包：`scripts/build-desktop.sh`。
+>
+> 本目录是**旧版**（Tauri）桌面版，暂时保留，后续阶段完成后删除。
+
 在本机运行的 AI 办公助手：服务端（WaLiOffice）和界面打包在同一个应用里，数据只保存在本机。
 
 ## 和网页版的区别

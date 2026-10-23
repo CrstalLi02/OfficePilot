@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# 构建编辑器套件（suite/ 子模块）的 macOS .app，供 OfficePilot 桌面版打包或开发时直接调用。
+# 构建编辑器套件外壳（suite/ 子模块）的 macOS .app。
 #
-#   scripts/build-suite.sh            # 产物：suite/apps/shell/release/mac-arm64/OfficePilot Suite.app
+#   scripts/build-suite.sh                    # 只有编辑器：suite/apps/shell/release/mac-arm64/OfficePilot.app
+#   OFFICEPILOT_BIN_DIR=<目录> scripts/build-suite.sh   # 连同 OfficePilot 服务（scripts/build-desktop.sh 这样调用）
+#   SUITE_TARGETS="dmg" scripts/build-suite.sh          # 另外打 dmg（默认只出 .app 目录）
 #
 # 不签名（CSC_IDENTITY_AUTO_DISCOVERY=false）；签名与公证在发布流程里统一处理。
 set -euo pipefail
@@ -23,8 +25,10 @@ npm run build:all
 # 表格的原生引擎（宿主架构）
 npm run native:build -w @genoffice/sheets
 cd apps/shell
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --dir --arm64
+rm -rf release/mac-arm64
+# shellcheck disable=SC2086
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac ${SUITE_TARGETS:-dir} --arm64
 
-APP="$SUITE/apps/shell/release/mac-arm64/OfficePilot Suite.app"
+APP="$SUITE/apps/shell/release/mac-arm64/OfficePilot.app"
 [ -d "$APP" ] || { echo "没有找到构建产物：$APP" >&2; exit 1; }
 echo "$APP"

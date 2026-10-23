@@ -168,7 +168,7 @@ export function IntegrationsPanel() {
 
       <section>
         <div className="text-sm font-semibold text-surface-900">编辑器套件</div>
-        <div className="mt-1 text-xs text-surface-500">在「我的文件」里点「用编辑器打开」，用 OfficePilot Suite 编辑 Word / Excel / PPT / PDF / Markdown / HTML。保存后自动同步回来，可以撤销。</div>
+        <div className="mt-1 text-xs text-surface-500">在「我的文件」里点「用编辑器打开」，用编辑器编辑 Word / Excel / PPT / PDF / Markdown / HTML。保存后自动同步回来，可以撤销。</div>
         {!editor?.enabled ? (
           <div className="mt-2 text-xs text-surface-500">需要 OfficePilot 桌面版。</div>
         ) : editor.app ? (

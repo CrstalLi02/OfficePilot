@@ -81,7 +81,7 @@ fn parse_output(stdout: &str) -> Option<Value> {
 
 /// 运行一条命令（自动加 `--json`），成功时返回套件的 JSON 结果
 pub async fn run(args: &[OsString], cwd: &Path, timeout: Duration) -> Result<Value, String> {
-    let (exe, mut full) = command().ok_or("没有找到编辑器套件（OfficePilot Suite）")?;
+    let (exe, mut full) = command().ok_or("没有找到编辑器套件")?;
     full.extend(args.iter().cloned());
     full.push("--json".into());
     let _slot = SLOTS.acquire().await.map_err(|e| e.to_string())?;

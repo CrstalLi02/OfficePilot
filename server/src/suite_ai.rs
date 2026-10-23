@@ -31,7 +31,10 @@ pub fn suite_settings_path() -> Option<PathBuf> {
     } else {
         std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config"))
     };
-    Some(dir.join("OfficePilot Suite").join("ai-settings.json"))
+    // 编辑器套件的数据目录与产品名一致：现在是 OfficePilot，早期独立打包时是 OfficePilot Suite
+    let current = dir.join("OfficePilot").join("ai-settings.json");
+    let earlier = dir.join("OfficePilot Suite").join("ai-settings.json");
+    Some(if !current.exists() && earlier.exists() { earlier } else { current })
 }
 
 fn state_path() -> PathBuf {
