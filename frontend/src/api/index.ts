@@ -131,6 +131,22 @@ export const fileApi = {
   delete: (id: string) => api.delete(`/files/${id}`),
 };
 
+// ===== 编辑器套件（桌面版） =====
+export interface EditorStatus {
+  enabled: boolean
+  available: boolean
+  app: string | null
+  supported: string[]
+  open: { file_id: string; name: string; path: string; dirty: boolean; conflict_file_id: string | null }[]
+}
+
+export const editorApi = {
+  status: () => api.get<EditorStatus>('/editor'),
+  openFile: (id: string) => api.post<{ opened: boolean; path: string }>(`/files/${id}/open-in-editor`),
+  openArtifact: (artifactId: string, sessionId: string) =>
+    api.post<{ opened: boolean; path: string; file_path: string; file_id: string }>(`/artifacts/${artifactId}/open-in-editor`, { session_id: sessionId }),
+};
+
 // ===== 文件夹 API =====
 export const folderApi = {
   list: (parentId?: string) => api.get('/files/folders/list', { params: { parent_id: parentId } }),

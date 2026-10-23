@@ -42,7 +42,7 @@ struct UserEditPayload {
 }
 
 /// 校验会话归属并取出当前产物
-async fn load_owned(pool: &DbPool, user: &AuthUser, session_id: &str, artifact_id: &str) -> Result<Artifact, AppError> {
+pub(crate) async fn load_owned(pool: &DbPool, user: &AuthUser, session_id: &str, artifact_id: &str) -> Result<Artifact, AppError> {
     let session = session_repo::find_by_id(pool, session_id)
         .await?
         .ok_or(AppError::NotFound("会话不存在".into()))?;

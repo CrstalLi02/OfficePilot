@@ -3,6 +3,7 @@ pub mod auth;
 pub mod chat;
 pub mod dashboard;
 pub mod doc_export;
+pub mod editor;
 pub mod embed;
 pub mod file;
 pub mod health;
@@ -44,6 +45,7 @@ pub fn build_router() -> Router {
         .merge(file::router())
         .merge(dashboard::router())
         .merge(doc_export::router())
+        .merge(editor::router())
         .merge(health::router())
         .merge(workspace::router())
         .merge(skills::router())

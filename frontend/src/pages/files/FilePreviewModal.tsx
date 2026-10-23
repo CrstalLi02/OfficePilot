@@ -1,6 +1,7 @@
 import { fileManagerName, isDesktop, openPath, revealPath } from '@/lib/desktop'
-import { useEffect, useState } from 'react'
-import { X, Download, ChevronLeft, ChevronRight, FileText, FileSpreadsheet, FileType, FileCode, File as FileIcon, ChevronDown, Play, ExternalLink, FolderOpen } from 'lucide-react'
+import { canEditFile, onWindowFocus, openFileInEditor } from '@/lib/editor'
+import { useEffect, useRef, useState } from 'react'
+import { X, Download, ChevronLeft, ChevronRight, FileText, FileSpreadsheet, FileType, FileCode, File as FileIcon, ChevronDown, Play, ExternalLink, FolderOpen, PenLine } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fileApi } from '@/api'
@@ -324,12 +325,19 @@ export function FilePreviewModal({ file, onClose, onPrev, onNext, onDownload }: 
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // 从编辑器切回来时重新加载预览（编辑器保存的内容会同步回这个文件）
+  const [reloadKey, setReloadKey] = useState(0)
+  useEffect(() => onWindowFocus(() => setReloadKey((k) => k + 1)), [])
+  const shownId = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    // 换了文件才显示加载中；同一个文件重新加载时保留当前预览，避免闪烁
+    const fresh = shownId.current !== file.id
+    shownId.current = file.id
+    setLoading(fresh)
     setError('')
-    setPreview(null)
+    if (fresh) setPreview(null)
     fileApi.preview(file.id)
       .then(res => {
         if (!cancelled) setPreview(res.data)
@@ -341,7 +349,7 @@ export function FilePreviewModal({ file, onClose, onPrev, onNext, onDownload }: 
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [file.id])
+  }, [file.id, reloadKey])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -502,6 +510,17 @@ export function FilePreviewModal({ file, onClose, onPrev, onNext, onDownload }: 
         >
           <Download className="h-4 w-4" /> 下载
         </button>
+
+        {/* 桌面版：用编辑器套件打开，保存后同步回来 */}
+        {canEditFile(file.name) && (
+          <button
+            onClick={() => openFileInEditor(file.id)}
+            className="flex h-10 items-center gap-1.5 rounded-full bg-white/15 px-4 text-sm font-medium text-white hover:bg-white/25 transition"
+            title="用编辑器打开，保存后自动同步回我的文件"
+          >
+            <PenLine className="h-4 w-4" /> 用编辑器打开
+          </button>
+        )}
 
         {/* 桌面版：在访达中显示 / 用默认应用打开 */}
         {isDesktop() && file.file_path && (
