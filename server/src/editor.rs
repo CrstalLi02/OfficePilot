@@ -99,7 +99,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// 文件名里不能出现路径分隔符；以点开头会变成隐藏文件
-fn safe_name(name: &str) -> String {
+pub fn safe_name(name: &str) -> String {
     let cleaned: String = name.chars().map(|c| if matches!(c, '/' | '\\' | ':') || c.is_control() { '_' } else { c }).collect();
     let cleaned = cleaned.trim().trim_start_matches('.').to_string();
     if cleaned.is_empty() { "文件".into() } else { cleaned }
@@ -200,7 +200,7 @@ fn editor_copy_name(name: &str) -> String {
     }
 }
 
-fn mime_of(name: &str) -> &'static str {
+pub fn mime_of(name: &str) -> &'static str {
     match name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).as_deref() {
         Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -208,6 +208,7 @@ fn mime_of(name: &str) -> &'static str {
         Some("pdf") => "application/pdf",
         Some("md" | "markdown") => "text/markdown",
         Some("html" | "htm") => "text/html",
+        Some("csv") => "text/csv",
         _ => "application/octet-stream",
     }
 }
@@ -326,6 +327,14 @@ pub async fn cleanup(pool: &DbPool, root: &Path, now: chrono::DateTime<chrono::U
         }
     }
     removed
+}
+
+/// 这个文件当前的工作副本（用编辑器打开过且还在）
+pub async fn working_copy(root: &Path, owner_id: &str, file_id: &str) -> Option<PathBuf> {
+    let dir = copy_dir(root, file_id).ok()?;
+    let m = read_manifest(&dir).await?;
+    let path = dir.join(&m.name);
+    (m.owner_id == owner_id && path.is_file()).then_some(path)
 }
 
 /// 正在用编辑器打开的文件（工作副本）

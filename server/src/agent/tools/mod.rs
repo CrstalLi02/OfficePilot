@@ -14,6 +14,7 @@ pub mod propose_plan;
 pub mod sheet_generate;
 pub mod schedule_tools;
 pub mod skill_tools;
+pub mod suite_tools;
 pub mod video_batch_generate;
 pub mod video_generate;
 pub mod video_storyboard;
@@ -75,6 +76,15 @@ pub async fn register_all_tools() {
     REGISTRY.register(Arc::new(office_edit::SheetApplyTool)).await;
     REGISTRY.register(Arc::new(office_edit::SlidesReadTool)).await;
     REGISTRY.register(Arc::new(office_edit::SlidesApplyTool)).await;
+    // 编辑器套件的能力：只在找到套件时提供（桌面版）
+    if crate::suite_cli::available() {
+        REGISTRY.register(Arc::new(suite_tools::OfficeConvertTool)).await;
+        REGISTRY.register(Arc::new(suite_tools::OfficeMergeTool)).await;
+        REGISTRY.register(Arc::new(suite_tools::OfficeCheckTool)).await;
+        REGISTRY.register(Arc::new(suite_tools::OfficeRenderTool)).await;
+        REGISTRY.register(Arc::new(suite_tools::EditorSelectionTool)).await;
+        REGISTRY.register(Arc::new(suite_tools::EditorOpenTool)).await;
+    }
 
     let tools = REGISTRY.list().await;
     tracing::info!(

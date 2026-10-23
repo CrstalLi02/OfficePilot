@@ -138,6 +138,7 @@ export interface EditorStatus {
   app: string | null
   supported: string[]
   open: { file_id: string; name: string; path: string; dirty: boolean; conflict_file_id: string | null }[]
+  agent_tools: string[]
 }
 
 export const editorApi = {

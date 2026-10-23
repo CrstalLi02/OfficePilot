@@ -11,6 +11,7 @@
 - 文件预览里可以“用默认应用打开”或“在访达中显示”（只允许数据目录里的文件）。
 - 不读取启动目录里的 `.env`，所有配置由应用设置。
 - 文件页和文件预览里有“用编辑器打开”：用随安装包附带的编辑器套件（OfficePilot Suite，位于 `OfficePilot.app/Contents/Resources/suite/`）编辑 Word / Excel / PPT / PDF / Markdown / HTML。文件先复制到数据目录的 `open/<文件 id>/<原文件名>`，编辑器里保存后自动同步回“我的文件”，每次同步都能在整理记录里撤销；编辑期间 AI 也改了同一个文件时两边都保留，编辑器的版本另存为“原名（编辑器版本）”。会话里生成的文档、表格、PPT 可以一步“保存到我的文件并用编辑器打开”。
+- 智能助手可以直接使用编辑器套件：格式转换（PDF 转 Word / Excel / PPT、导出 PDF、HTML 转 Word）、用数据填写模板、文档体检（Word 的引用和目录、Excel 的公式错误、PPT 的版面）、逐页渲染给用户看、读取用户在编辑器里选中的内容、在编辑器里打开文件。转换和填写模板的结果另存为新文件，可以撤销。
 - 附带 `officepilot` 命令行（sidecar，编译时由 build.rs 自动构建）：设置 → 集成里可以把 skill 装进 Claude Code / Codex / Cursor / Gemini CLI、复制 MCP 接入配置，或把命令行安装到 `~/.local/bin`。
 
 数据目录：macOS 为 `~/Library/Application Support/com.officepilot.desktop`（数据库、上传和生成的文件、JWT 密钥、`logs/officepilot.log` 日志）。
