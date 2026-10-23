@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy, Download, Loader2, PenLine, Terminal } from 'lucide-react'
-import { editorApi, integrationsApi, type EditorStatus, type IntegrationsOverview } from '@/api'
+import { editorApi, integrationsApi, type EditorAiSync, type EditorStatus, type IntegrationsOverview } from '@/api'
 
 function errorText(err: any, fallback: string) {
   return err?.response?.data?.detail?.replace(/^参数错误:\s*/, '') || fallback
@@ -31,6 +31,7 @@ function Snippet({ label, text }: { label: string; text: string }) {
 export function IntegrationsPanel() {
   const [data, setData] = useState<IntegrationsOverview | null>(null)
   const [editor, setEditor] = useState<EditorStatus | null>(null)
+  const [aiSync, setAiSync] = useState<EditorAiSync | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -46,6 +47,7 @@ export function IntegrationsPanel() {
   useEffect(() => {
     load()
     editorApi.status().then(({ data }) => setEditor(data)).catch(() => {})
+    editorApi.aiSync().then(({ data }) => setAiSync(data)).catch(() => {})
   }, [])
 
   const act = async (key: string, run: () => Promise<string | null>) => {
@@ -180,6 +182,36 @@ export function IntegrationsPanel() {
         ) : null}
         {editor?.enabled && editor.app && editor.agent_tools.length > 0 && (
           <div className="mt-2 text-xs leading-relaxed text-surface-500">智能助手也能使用编辑器套件：{editor.agent_tools.join('、')}。转换和填写模板的结果另存为新文件，可以撤销。</div>
+        )}
+        {aiSync?.available && (
+          <div className="mt-3 flex items-start gap-3 rounded-2xl border border-black/[0.06] bg-white px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-surface-900">编辑器套件使用 OfficePilot 的模型</div>
+              <div className="mt-0.5 text-xs leading-relaxed text-surface-500">
+                {aiSync.enabled
+                  ? `已同步：${aiSync.profile_name ?? ''} · ${aiSync.model ?? ''}。修改模型设置后自动更新。`
+                  : '开启后，编辑器里的 AI 助手直接使用这里配置的模型服务，不用再填一遍。'}
+                密钥不会写进编辑器套件的设置文件，只在从 OfficePilot 打开编辑器时交给它；直接从访达或程序坞打开的编辑器拿不到密钥。
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={aiSync.enabled}
+              aria-label="编辑器套件使用 OfficePilot 的模型"
+              disabled={!!busy}
+              onClick={() =>
+                act('ai-sync', async () => {
+                  const { data } = await editorApi.setAiSync(!aiSync.enabled)
+                  setAiSync(data)
+                  return data.enabled ? '已开启。下次从 OfficePilot 打开编辑器时生效' : '已关闭，编辑器套件恢复使用原来的模型设置'
+                })
+              }
+              className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition disabled:opacity-50 ${aiSync.enabled ? 'bg-surface-950' : 'bg-surface-200'}`}
+            >
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${aiSync.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+            </button>
+          </div>
         )}
         {!editor?.enabled || editor.app ? null : (
           <div className="mt-2 text-xs text-surface-500">没有找到编辑器套件。从源码构建：<code className="rounded bg-surface-100 px-1">scripts/build-suite.sh</code></div>

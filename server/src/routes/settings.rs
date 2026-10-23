@@ -242,10 +242,15 @@ pub fn import_startup_llm_profile(settings: &mut AppSettings) {
     });
 }
 
+/// 用户当前生效的设置：保存过的，或默认设置（与设置页看到的一致）
+pub async fn effective_settings(pool: &crate::db::DbPool, user_id: &str) -> Result<AppSettings, AppError> {
+    let settings = settings_repo::find_by_user(pool, user_id).await?.unwrap_or_else(default_settings);
+    normalize_settings(settings)
+}
+
 async fn get_settings(user: AuthUser) -> Result<Json<AppSettings>, AppError> {
     let pool = state::db_pool();
-    let settings = settings_repo::find_by_user(&pool, &user.0.id).await?.unwrap_or_else(default_settings);
-    Ok(Json(normalize_settings(settings)?))
+    Ok(Json(effective_settings(&pool, &user.0.id).await?))
 }
 
 async fn save_settings(
@@ -255,6 +260,14 @@ async fn save_settings(
     let pool = state::db_pool();
     let normalized = normalize_settings(payload)?;
     let saved = settings_repo::save_for_user(&pool, &user.0.id, &normalized).await?;
+    // 编辑器套件共用模型时，跟着更新它的配置
+    if crate::editor::enabled() {
+        if let Some((suite_file, state_file)) = crate::suite_ai::paths() {
+            if let Err(e) = crate::suite_ai::resync(&pool, &suite_file, &state_file).await {
+                tracing::warn!("[SuiteAI] 同步模型配置失败：{e}");
+            }
+        }
+    }
     Ok(Json(saved))
 }
 
