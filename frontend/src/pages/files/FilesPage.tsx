@@ -4,8 +4,9 @@ import {
   Upload, Search, Download, Trash2, Folder as FolderIcon,
   FileText, Image, FileSpreadsheet, FileType, FileCode,
   File as FileIcon, FolderPlus, ChevronRight, HardDrive, Sparkles,
-  LayoutGrid, List, Eye, Play,
+  LayoutGrid, List, Eye, Play, PenLine,
 } from 'lucide-react'
+import { canEditFile, onWindowFocus, openFileInEditor } from '@/lib/editor'
 import { fileApi, folderApi } from '@/api'
 import type { FileItem, Folder } from '@/types'
 import { FileThumbnail } from './FileThumbnail'
@@ -85,8 +86,8 @@ export default function FilesPage() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       if (searchQuery) {
         const res = await fileApi.search(searchQuery)
@@ -111,6 +112,9 @@ export default function FilesPage() {
     const timer = setTimeout(loadData, 250)
     return () => clearTimeout(timer)
   }, [loadData])
+
+  // 桌面版从编辑器切回来时静默刷新（编辑器保存的内容已同步回来，大小和修改时间会变）
+  useEffect(() => onWindowFocus(() => loadData(true)), [loadData])
 
   const generatedCount = files.filter(isGeneratedFile).length
   const uploadedCount = files.length - generatedCount
@@ -376,6 +380,15 @@ export default function FilesPage() {
                     >
                       <Eye className="h-3.5 w-3.5" /> 预览
                     </button>
+                    {canEditFile(file.name) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openFileInEditor(file.id) }}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-100 text-surface-600 hover:bg-surface-200 transition"
+                        title="用编辑器打开"
+                      >
+                        <PenLine className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDownload(file) }}
                       className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-100 text-surface-600 hover:bg-surface-200 transition"
@@ -452,6 +465,16 @@ export default function FilesPage() {
                         <Eye className="h-3.5 w-3.5" />
                         预览
                       </button>
+                      {canEditFile(file.name) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openFileInEditor(file.id) }}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-200 bg-white px-3 text-xs font-semibold text-surface-600 transition hover:bg-surface-50"
+                          title="用编辑器打开，保存后自动同步回来"
+                        >
+                          <PenLine className="h-3.5 w-3.5" />
+                          编辑
+                        </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDownload(file) }}
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-200 bg-white px-3 text-xs font-semibold text-surface-600 transition hover:bg-surface-50"

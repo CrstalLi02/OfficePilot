@@ -101,10 +101,21 @@ fn configure_env(root: &Path, port: u16) -> anyhow::Result<()> {
     if let Some(cli) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(if cfg!(windows) { "officepilot.exe" } else { "officepilot" }))).filter(|p| p.is_file()) {
         std::env::set_var("OFFICEPILOT_CLI", cli);
     }
+    // 随安装包附带的编辑器套件（Contents/Resources/suite/），开发时由服务端在仓库里查找
+    if let Some(suite) = suite_app() {
+        std::env::set_var("OFFICEPILOT_SUITE_APP", suite);
+    }
     for (key, value) in vars {
         std::env::set_var(key, value);
     }
     Ok(())
+}
+
+/// macOS 安装包里的编辑器套件：OfficePilot.app/Contents/MacOS/OfficePilot → ../Resources/suite/OfficePilot Suite.app
+fn suite_app() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let app = exe.parent()?.parent()?.join("Resources").join("suite").join("OfficePilot Suite.app");
+    app.is_dir().then_some(app)
 }
 
 fn bind_listener() -> anyhow::Result<std::net::TcpListener> {

@@ -5,6 +5,7 @@ mod auth;
 mod config;
 mod data_engine;
 mod db;
+mod editor;
 mod error;
 mod eval;
 mod file_extract;
@@ -76,6 +77,10 @@ pub async fn prepare() -> anyhow::Result<axum::Router> {
     tokio::spawn(im::manager::start_all());
     mcp::pool::spawn_reaper();
     agent::tools::register_all_tools().await;
+    // 桌面版：用编辑器套件打开的文件，保存后同步回工作区
+    if editor::enabled() {
+        editor::spawn_sync();
+    }
 
     Ok(routes::build_router())
 }

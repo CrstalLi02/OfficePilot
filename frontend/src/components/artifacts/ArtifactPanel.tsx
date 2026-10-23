@@ -1,4 +1,5 @@
-import { Clapperboard, Code2, Download, Eye, GripVertical, Image, Layers3, Maximize2, Minimize2, MessageSquarePlus, PenTool, Pencil, Save, Sparkles } from 'lucide-react'
+import { Clapperboard, Code2, Download, Eye, GripVertical, Image, Layers3, Maximize2, Minimize2, MessageSquarePlus, PenLine, PenTool, Pencil, Save, Sparkles } from 'lucide-react'
+import { canEditArtifact, openArtifactInEditor } from '@/lib/editor'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -932,6 +933,9 @@ export function ArtifactPanel({
             {canExportActiveArtifact && activeArtifact?.kind === 'drawio' && (
               <button className="btn-secondary h-8 px-2.5 text-xs" onClick={() => onExportDrawio(activeArtifact)}><Download className="h-3.5 w-3.5" /></button>
             )}
+            {activeArtifact && sessionId && canEditArtifact(activeArtifact.kind) && (
+              <button className="btn-secondary h-8 px-2.5 text-xs" title="保存到我的文件并用编辑器打开" onClick={() => openArtifactInEditor(activeArtifact.id, sessionId)}><PenLine className="h-3.5 w-3.5" /></button>
+            )}
             <button className="btn-ghost h-8 px-2" onClick={() => onOpenChange(false)} title="关闭">关闭</button>
           </div>
         </div>
@@ -1042,6 +1046,12 @@ export function ArtifactPanel({
             <button className="btn-secondary h-8 px-2.5 text-xs" onClick={() => onExportDrawio(activeArtifact)}>
               <Download className="h-3.5 w-3.5" />
               下载 draw.io
+            </button>
+          )}
+          {activeArtifact && sessionId && canEditArtifact(activeArtifact.kind) && (
+            <button className="btn-secondary h-8 px-2.5 text-xs" title="保存到我的文件（根目录）并用编辑器打开，保存后自动同步" onClick={() => openArtifactInEditor(activeArtifact.id, sessionId)}>
+              <PenLine className="h-3.5 w-3.5" />
+              用编辑器打开
             </button>
           )}
           <button className="btn-ghost h-8 px-2" onClick={() => onWideChange(!isWide)} title="切换宽度">

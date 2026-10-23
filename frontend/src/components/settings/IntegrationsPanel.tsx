@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, Download, Loader2, Terminal } from 'lucide-react'
-import { integrationsApi, type IntegrationsOverview } from '@/api'
+import { Check, Copy, Download, Loader2, PenLine, Terminal } from 'lucide-react'
+import { editorApi, integrationsApi, type EditorStatus, type IntegrationsOverview } from '@/api'
 
 function errorText(err: any, fallback: string) {
   return err?.response?.data?.detail?.replace(/^参数错误:\s*/, '') || fallback
@@ -30,6 +30,7 @@ function Snippet({ label, text }: { label: string; text: string }) {
 /** 设置 → 集成：把 officepilot skill 装进编程 Agent，MCP 接入方式，命令行安装到 PATH */
 export function IntegrationsPanel() {
   const [data, setData] = useState<IntegrationsOverview | null>(null)
+  const [editor, setEditor] = useState<EditorStatus | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -44,6 +45,7 @@ export function IntegrationsPanel() {
 
   useEffect(() => {
     load()
+    editorApi.status().then(({ data }) => setEditor(data)).catch(() => {})
   }, [])
 
   const act = async (key: string, run: () => Promise<string | null>) => {
@@ -159,6 +161,24 @@ export function IntegrationsPanel() {
           </div>
         ) : (
           <div className="mt-2 text-xs text-surface-500">本机没有找到 officepilot。从源码安装：<code className="rounded bg-surface-100 px-1">cargo install --path cli</code></div>
+        )}
+      </section>
+
+      <section>
+        <div className="text-sm font-semibold text-surface-900">编辑器套件</div>
+        <div className="mt-1 text-xs text-surface-500">在「我的文件」里点「用编辑器打开」，用 OfficePilot Suite 编辑 Word / Excel / PPT / PDF / Markdown / HTML。保存后自动同步回来，可以撤销。</div>
+        {!editor?.enabled ? (
+          <div className="mt-2 text-xs text-surface-500">需要 OfficePilot 桌面版。</div>
+        ) : editor.app ? (
+          <div className="mt-2 flex items-center gap-3 rounded-2xl border border-black/[0.06] bg-white px-4 py-3">
+            <PenLine className="h-4 w-4 shrink-0 text-surface-500" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-xs text-surface-800" title={editor.app}>{editor.app}</div>
+              <div className="text-xs text-surface-500">{editor.open.length ? `${editor.open.length} 个文件正在用编辑器编辑${editor.open.some((f) => f.dirty) ? '，有修改正在同步' : ''}` : '已就绪'}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-surface-500">没有找到编辑器套件。从源码构建：<code className="rounded bg-surface-100 px-1">scripts/build-suite.sh</code></div>
         )}
       </section>
     </div>
