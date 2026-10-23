@@ -1,73 +1,73 @@
 # OfficePilot
 
-> Web 端 AI Agent 智能办公平台 — 通过自然语言对话，一键生成 PPT、文档、表格、流程图、图表、图片和视频。
+> A web-based AI agent for office work: describe what you need in plain language and get slide decks, documents, spreadsheets, flowcharts, charts, images and videos in one step.
 
-本项目基于开源项目 [fuzhengwei/WaLiOffice](https://github.com/fuzhengwei/WaLiOffice)（导入自 commit `50ad355`）二次开发，重构了 Agent 内核。原项目的功能介绍见下文。
+This project is built on the open-source [fuzhengwei/WaLiOffice](https://github.com/fuzhengwei/WaLiOffice) (imported at commit `50ad355`), with a rebuilt agent core. The original project's feature overview follows further below.
 
-## 🧭 本仓库新增
+## 🧭 What this repository adds
 
-| 模块 | 内容 |
+| Module | What it does |
 |---|---|
-| 流式 + 并行工具调用 | 回复逐 token 推送；同一轮的多个工具调用按依赖关系分段执行，可并行的工具并发运行（并发上限可配置），每个工具在独立任务中运行，带超时和 panic 隔离，结果按原顺序写回上下文 |
-| 可取消执行 | `POST /api/chat/cancel` 中断正在生成的 LLM 流和执行中的工具，已生成的产物照常保存；刷新页面不会中断任务 |
-| Craft / Plan / Ask 三种模式 | 删除关键词规则式意图识别，改由模型根据工具描述选择工具；Plan 模式先提交计划（`propose_plan`），用户可勾选步骤、补充意见，确认后从中断处恢复执行，刷新页面后仍可确认 |
-| 产物局部编辑 | `artifact_edit`：把产物展开成带编号的视图，模型返回语义化操作（按章节 / 页 / 单元格 / 列，图表用 JSON Merge Patch），服务端校验后应用，只重写被改动的部分；非法操作整体回滚 |
-| 产物版本 | 每次生成、AI 编辑、手动修改、恢复都会记录一个版本；支持逐行对比任意版本、一键恢复 |
-| 工作区文件工具 | Agent 可以列目录、全文搜索（带提取文本缓存）、读取 Word / PDF / PPT / Excel，新建文本文件、把产物导出到指定目录，批量建目录 / 移动 / 重命名 / 转换为 Markdown；每次写入和整理都记录逆操作，可一键撤销；不提供删除。输入框 `@` 可直接引用文件 |
-| 数据分析 | 进程内 SQL 引擎（Apache DataFusion）：`data_profile` 查看数据结构与概况，`data_query` 对 csv / xlsx / json 执行只读 SQL，图表和表格直接由查询结果生成，不经过模型；SQL 文本校验 + DataFusion `SQLOptions` 禁止 DDL / DML / SET，限制内存、超时和结果行数；支持 GBK 编码 CSV，Excel 可按 sheet 导出为 csv |
-| 技能系统 | 兼容开放的 Agent Skills（SKILL.md）规范与 OpenClaw 扩展字段：内置周报、会议纪要、PRD、竞品分析、数据分析报告、汇报 PPT、公文写作、简历优化 8 个技能；渐进式加载（提示词只列名称和简介 → `use_skill` 加载正文 → `read_skill_file` 读模板）；输入框 `/` 显式调用；支持导入 zip / SKILL.md（防路径穿越、限制大小）、启用停用、从对话生成技能；技能只作参考说明，`allowed-tools` 只能缩小工具范围 |
-| 后台任务 | Agent 运行与网页连接解耦：每次运行落库为任务（排队 / 运行 / 完成 / 失败 / 停止 / 待确认 / 中断），每个用户同时最多运行 3 个，超出排队；事件写入回放缓冲，刷新页面或换设备打开会话会自动接上进度（SSE 支持断点续传）；关掉页面任务继续运行，完成后发通知；服务重启时未完成的任务标记为中断，可一键重试；顶栏任务面板查看与管理 |
-| 定时任务 | 用 5 段 cron 设定周期任务（每天 / 工作日 / 每周 / 每月 / 每小时 / 自定义，最小间隔 10 分钟），按用户浏览器时区触发；可在对话里直接说“每周五下午五点帮我写周报”由 Agent 调用 `schedule_create` 创建，也可在任务面板里新建、编辑、停用、立即运行，并实时预览接下来的触发时间；到点以后台任务运行（执行或问答模式，每次新会话或固定会话），上一次还没结束时自动跳过，服务停机期间错过的只补跑一次；每次触发留有运行记录 |
-| IM 远程控制 | 在飞书里给机器人发消息就能让 Agent 干活：默认用长连接接收事件（不需要公网地址，本机运行也能用），也支持事件回调 URL（验签 + 解密）；网页上生成 6 位绑定码，在飞书里发「绑定 123456」后才能使用，群聊需要 @ 机器人；每个飞书会话对应一个系统会话，支持 `/new`、`/mode 执行|规划|问答`、`/stop`、`/status`；运行中用卡片实时显示步骤，完成后更新为结论并把生成的 Word / Excel / PPT / 图片作为文件发回；规划模式下回复「确认」「取消」或修改意见即可处理计划；计划卡片带「确认执行」「取消」按钮（卡片回调），也可以直接回复；发图片会作为视觉输入，发文件会存进“我的文件”并交给 Agent 读取或分析（单独发来的先暂存，等下一条消息说明要做什么）；在飞书里创建的定时任务结果自动推回该会话，网页上也可以为定时任务选择推送到哪个飞书私聊或群；App Secret 等密钥加密存储，事件去重，每个账号每分钟最多 10 条 |
-| MCP 插件 | 在「设置 → 插件（MCP）」接入任意 MCP 服务器，支持 Streamable HTTP、旧版 SSE 和本地命令（stdio，需服务端开启），也可以粘贴 Claude Desktop / Cursor 的 `mcpServers` JSON 一键导入；工具以 `mcp__标识__工具名` 自动加入 Agent 的工具箱，网页、飞书、定时任务里都能用；只读工具在规划 / 问答模式可用，可能修改数据的工具只在执行模式开放，模型调用未开放的工具会被拒绝；请求头与环境变量加密存储，本地命令不继承服务端环境变量，远程地址默认禁止内网 / 本机（防 SSRF），工具结果标注为外部数据以防提示注入；连接复用、工具列表缓存、会话失效自动重连，每个工具可单独开关 |
-| 插件增强 | **调用前确认**：插件的写操作（或设为“每次确认”的插件）执行前运行原地暂停，网页弹出确认卡片（参数预览、倒计时），飞书发带按钮的卡片，可选“本次对话都允许”；10 分钟未处理自动拒绝，停止运行立即结束等待，定时任务没人在场直接拒绝；关掉页面时发通知。**插件目录**：内置按官方文档核实过的 DeepWiki、Context7、高德地图、GitHub、Fetch、Time，填写所需密钥即可添加（放在地址参数里的密钥也加密保存，不出现在界面和错误信息里）。**资源与提示词**：插件资源出现在 @ 菜单，引用后读取内容交给 Agent；插件提示词出现在 / 菜单，有参数时先填写，渲染后填进输入框。另外：系统提示要求执行类请求每次都必须实际调用工具，防止模型照着历史回复编造“已完成” |
-| 桌面版 | Tauri 2 打包的 OfficePilot 桌面应用（`desktop/`）：同一进程内启动服务、只监听本机，自动以本机用户登录；首次启动引导配置模型服务（带连接测试）；关窗缩到托盘，定时任务和飞书接收继续运行；默认开启本地命令插件；文件可“用默认应用打开 / 在访达中显示”。详见 [desktop/README.md](desktop/README.md) |
-| 路由评测 | `walioffice eval`：72 条用例（其中 5 条需要 `--mcp` 接入插件），复用线上的路由与请求组装逻辑，评测模型的工具选择，按模式输出报告 |
-| 修复 | SQLite 下会话历史读取失败，导致 Agent 每轮都拿不到上下文；同一次运行中后续工具读不到刚生成的产物 |
+| Streaming + parallel tool calls | Replies stream token by token. Tool calls in the same turn are split into segments by dependency; tools that can run in parallel run concurrently (configurable limit). Each tool runs in its own task with a timeout and panic isolation, and results are written back to the context in the original order |
+| Cancellable runs | `POST /api/chat/cancel` stops the LLM stream and any running tools; artifacts already produced are still saved. Refreshing the page does not interrupt a run |
+| Craft / Plan / Ask modes | Keyword-based intent rules were removed; the model chooses tools from their descriptions. In Plan mode the agent first submits a plan (`propose_plan`); the user can tick steps and add comments, and the run resumes where it paused once confirmed — even after a page refresh |
+| Partial artifact edits | `artifact_edit` expands an artifact into a numbered view; the model returns semantic operations (by section / slide / cell / column, JSON Merge Patch for charts). The server validates and applies them, rewriting only the changed parts; any invalid operation rolls back the whole batch |
+| Artifact versions | Every generation, AI edit, manual edit and restore records a version; any two versions can be diffed line by line and restored in one click |
+| Workspace file tools | The agent can list folders, full-text search (with an extracted-text cache), and read Word / PDF / PPT / Excel files; create text files, export artifacts to a chosen folder, and batch-create folders / move / rename / convert to Markdown. Every write and reorganisation records its inverse operation and can be undone in one click; there is no delete. Type `@` in the input box to reference a file |
+| Data analysis | An in-process SQL engine (Apache DataFusion): `data_profile` shows a dataset's structure and summary, and `data_query` runs read-only SQL over csv / xlsx / json. Charts and tables are built straight from query results, not by the model. SQL text checks plus DataFusion `SQLOptions` forbid DDL / DML / SET, with limits on memory, time and result rows. GBK-encoded CSV is supported, and Excel sheets can be exported to csv |
+| Skills | Compatible with the open Agent Skills (SKILL.md) spec and OpenClaw extension fields. Eight built-in skills: weekly report, meeting minutes, PRD, competitive analysis, data analysis report, presentation deck, official document writing, and resume polishing. Progressive loading (the prompt lists only names and summaries → `use_skill` loads the body → `read_skill_file` reads templates). Type `/` in the input box to invoke one explicitly. Import from zip / SKILL.md (path-traversal protected, size limited), enable or disable, or create a skill from a conversation. Skills are reference instructions only; `allowed-tools` can only narrow the tool set |
+| Background tasks | Agent runs are decoupled from the web connection. Each run is stored as a task (queued / running / done / failed / stopped / awaiting confirmation / interrupted); each user can run up to 3 at once and the rest queue. Events go into a replay buffer, so refreshing the page or opening the session on another device picks the progress back up (SSE supports resuming). Closing the page keeps the task running and sends a notification when it finishes. Tasks left unfinished when the server restarts are marked interrupted and can be retried in one click. Manage them from the task panel in the top bar |
+| Scheduled tasks | Set up recurring tasks with 5-field cron (daily / weekdays / weekly / monthly / hourly / custom, minimum interval 10 minutes), triggered in the user's browser time zone. Ask in chat — e.g. "write my weekly report every Friday at 5 pm" — and the agent creates it with `schedule_create`, or create, edit, pause and run tasks from the task panel with a live preview of upcoming runs. Each trigger runs as a background task (Craft or Ask mode, in a new or a fixed session). A run is skipped if the previous one is still going, and runs missed while the server was down are made up only once. Every trigger keeps a run record |
+| IM remote control | Message the bot in Feishu (Lark) to put the agent to work. Events arrive over a long connection by default (no public address needed, works on a local machine), and an event callback URL (signature check + decryption) is also supported. Generate a 6-digit binding code on the web, then send `绑定 123456` ("bind 123456") in Feishu to start; group chats require @-mentioning the bot. Each Feishu conversation maps to one session and supports `/new`, `/mode 执行\|规划\|问答` (Craft / Plan / Ask), `/stop` and `/status`. While running, a card shows the steps live; when done it updates with the conclusion and sends back the generated Word / Excel / PPT / image files. In Plan mode, reply `确认` (confirm), `取消` (cancel) or your changes to handle the plan; plan cards also carry Confirm / Cancel buttons (card callbacks). Images are used as visual input; files are saved to My Files and handed to the agent to read or analyse (a file sent on its own is held until the next message says what to do with it). Results of scheduled tasks created in Feishu are pushed back to that conversation, and on the web you can choose which Feishu private chat or group a scheduled task reports to. App Secret and other keys are stored encrypted, events are de-duplicated, and each account is limited to 10 messages per minute |
+| MCP plugins | Connect any MCP server under Settings → Plugins (MCP): Streamable HTTP, legacy SSE, or a local command (stdio, must be enabled on the server); you can also paste a Claude Desktop / Cursor `mcpServers` JSON to import in one step. Tools join the agent's toolbox as `mcp__<id>__<tool>` and work on the web, in Feishu and in scheduled tasks. Read-only tools are available in Plan / Ask mode, while tools that may change data are only offered in Craft mode; calls to tools that are not offered are rejected. Headers and environment variables are stored encrypted, local commands do not inherit the server's environment, remote addresses on private networks / localhost are blocked by default (SSRF protection), and tool results are marked as external data to guard against prompt injection. Connections are reused, tool lists are cached, expired sessions reconnect automatically, and each tool can be switched on or off |
+| Plugin enhancements | **Confirm before calling**: a plugin's write operations (or every call, for plugins set to "always confirm") pause the run in place. The web shows a confirmation card (argument preview, countdown) and Feishu gets a card with buttons, with an option to "allow for this conversation". Requests left unanswered for 10 minutes are rejected, stopping the run ends the wait immediately, and scheduled tasks — with nobody there to answer — are rejected outright; a notification is sent if the page is closed. **Plugin catalog**: built-in entries verified against the official docs for DeepWiki, Context7, Amap, GitHub, Fetch and Time — fill in the required keys to add one (keys passed as URL parameters are also stored encrypted and never shown in the UI or error messages). **Resources and prompts**: plugin resources appear in the `@` menu and their content is passed to the agent when referenced; plugin prompts appear in the `/` menu, ask for any arguments first, and are rendered into the input box. In addition, the system prompt requires every action request to actually call a tool, so the model cannot claim something is "done" by copying earlier replies |
+| Desktop app | The OfficePilot desktop app packaged with Tauri 2 (`desktop/`): it starts the server in the same process, listens only on localhost, and signs in as the local user automatically. First launch walks through configuring a model service (with a connection test). Closing the window minimises to the tray while scheduled tasks and Feishu messages keep running. Local-command plugins are on by default, and files can be opened with the default app or shown in Finder. See [desktop/README.md](desktop/README.md) |
+| Routing evaluation | `walioffice eval`: 72 cases (5 of which need a plugin attached with `--mcp`). It reuses the production routing and request-building logic to evaluate the model's tool choices and writes a report per mode |
+| Fixes | Session history failed to load on SQLite, so the agent lost its context every turn; later tools in the same run could not see artifacts generated earlier in that run |
 
-架构说明与开发计划见各里程碑的提交记录。
+The architecture and development plans are recorded in each milestone's commits.
 
-WaLiOffice 将 AI Agent 能力与办公文档生成深度结合：用户在对话中描述需求，Agent 自动拆解任务、调用工具、生成产物，全程 SSE 流式响应，实时展示思考和生成过程。生产部署只需一个 Rust 二进制（前端静态资源内嵌），开箱即用。
+WaLiOffice combines AI agent capabilities with office document generation: you describe what you need in a conversation, and the agent breaks the task down, calls tools and produces the artifacts, streaming everything over SSE so you can watch it think and build in real time. A production deployment is a single Rust binary (with the front-end assets embedded) that works out of the box.
 
-你也可以选择安装 Deepseek Harness Plugin [https://github.com/fuzhengwei/walioffice-dsh-plugin](https://github.com/fuzhengwei/walioffice-dsh-plugin)
+You can also install the DeepSeek Harness Plugin: [https://github.com/fuzhengwei/walioffice-dsh-plugin](https://github.com/fuzhengwei/walioffice-dsh-plugin)
 
-## ✨ 功能特性
+## ✨ Features
 
-- **AI 对话驱动**：基于 ReAct 循环的 Agent 引擎，支持多轮对话、上下文压缩、自动工具编排
-- **PPT 生成**：大纲规划 → 内容填充 → 视觉设计，生成可预览的幻灯片
-- **文档生成**：支持报告 / PRD / 计划等多种文档类型，可导出 `.docx`
-- **表格生成**：结构化数据表格，可导出 `.xlsx`
-- **图表生成**：基于数据自动生成可视化图表
-- **流程图生成**：输出 draw.io 格式 XML，支持在线编辑
-- **图片生成**：调用文生图模型，生成高质量图片
-- **视频生成**：调用文生视频模型，远程不可用时本地 `ffmpeg` 兜底合成 MP4
-- **联网搜索**：支持 SearXNG / DuckDuckGo 多搜索源，Agent 可主动检索实时信息
-- **文件解析**：支持上传文件内容提取与 OCR 识别，作为对话上下文
-- **多模型切换**：文本 / 图片 / 视频各自独立配置模型列表，前端设置页可实时切换
-- **用户认证**：JWT 认证，登录页支持账号密码登录与注册
-- **单一二进制部署**：Rust + rust-embed，前端嵌入后端，一个二进制即可启动全部服务
-- **Docker 一键部署**：多阶段构建，内置国内镜像加速
+- **Conversation-driven AI**: an agent engine built on a ReAct loop, with multi-turn conversations, context compression and automatic tool orchestration
+- **Slide decks**: outline planning → content → visual design, producing slides you can preview
+- **Documents**: reports, PRDs, plans and other document types, exportable to `.docx`
+- **Spreadsheets**: structured tables, exportable to `.xlsx`
+- **Charts**: visual charts generated from data
+- **Flowcharts**: draw.io XML output that can be edited online
+- **Images**: high-quality images from text-to-image models
+- **Videos**: text-to-video models, with a local `ffmpeg` fallback that assembles an MP4 when the remote service is unavailable
+- **Web search**: multiple search sources (SearXNG / DuckDuckGo); the agent can look up current information on its own
+- **File parsing**: content extraction and OCR for uploaded files, used as conversation context
+- **Multiple models**: separate model lists for text / image / video, switchable live from the settings page
+- **Authentication**: JWT; the login page supports username + password sign-in and registration
+- **Single-binary deployment**: Rust + rust-embed embed the front end into the back end, so one binary starts everything
+- **One-command Docker deployment**: multi-stage build with mirror acceleration for mainland China
 
-## 🏗 技术栈
+## 🏗 Tech stack
 
-| 层 | 技术 | 说明 |
+| Layer | Technology | Notes |
 |---|---|---|
-| 后端框架 | Rust + axum + tokio | 高性能异步 Web 框架 |
-| 前端框架 | React 18 + TypeScript + Vite | SPA，构建后嵌入 Rust 二进制 |
-| 样式 | TailwindCSS | 原子化 CSS |
-| 状态管理 | Zustand | 轻量级状态管理 |
-| 数据库 | SQLite（嵌入式） | 零配置，可选 MySQL |
-| LLM 接口 | OpenAI 兼容 | 支持任何兼容端点，流式 SSE |
-| 文档渲染 | docx-rs + rust_xlsxwriter | 纯 Rust 实现，无外部依赖 |
-| 认证 | JWT + bcrypt | 无状态认证 |
-| 静态资源 | rust-embed | 编译时嵌入前端产物 |
-| 部署 | Docker / 单一二进制 | 多阶段构建；release 二进制约 69MB（内嵌前端与 DataFusion） |
+| Back-end framework | Rust + axum + tokio | High-performance async web framework |
+| Front-end framework | React 18 + TypeScript + Vite | SPA, embedded into the Rust binary after building |
+| Styling | TailwindCSS | Utility-first CSS |
+| State management | Zustand | Lightweight state management |
+| Database | SQLite (embedded) | Zero configuration; MySQL optional |
+| LLM interface | OpenAI-compatible | Works with any compatible endpoint, streaming SSE |
+| Document rendering | docx-rs + rust_xlsxwriter | Pure Rust, no external dependencies |
+| Authentication | JWT + bcrypt | Stateless authentication |
+| Static assets | rust-embed | Front-end build embedded at compile time |
+| Deployment | Docker / single binary | Multi-stage build; the release binary is about 69 MB (front end and DataFusion embedded) |
 
-## 📐 架构概览
+## 📐 Architecture overview
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    浏览器 / React UI                      │
+│                  Browser / React UI                       │
 │  Studio · Login · Files · Settings                       │
 └────────────────────────┬────────────────────────────────┘
                          │ HTTP / SSE
@@ -92,234 +92,234 @@ WaLiOffice 将 AI Agent 能力与办公文档生成深度结合：用户在对�
 └─────────────────────────────────────────────────────────┘
 ```
 
-## 📁 项目结构
+## 📁 Project structure
 
 ```
 WaLiOffice/
-├── server/                   # Rust 服务端（~14000 行）
+├── server/                   # Rust server (~14,000 lines)
 │   └── src/
-│       ├── main.rs           # 启动入口
-│       ├── config.rs         # 环境变量配置
-│       ├── state.rs          # 应用状态
-│       ├── error.rs          # 统一错误处理
-│       ├── file_extract.rs   # 文件内容提取
-│       ├── image_ocr.rs      # OCR 图片识别
-│       ├── agent/            # Agent 引擎
-│       │   ├── mod.rs        # ReAct 循环 + 上下文管理
-│       │   └── tools/        # 内置工具（13 个）
-│       │       ├── ppt_plan.rs        # PPT 大纲规划
-│       │       ├── ppt_generate.rs    # PPT 生成
-│       │       ├── doc_generate.rs    # 文档生成
-│       │       ├── sheet_generate.rs  # 表格生成
-│       │       ├── chart_generate.rs  # 图表生成
-│       │       ├── drawio_generate.rs # 流程图生成
-│       │       ├── md_generate.rs     # Markdown 生成
-│       │       ├── image_prompt.rs    # 图片提示词 + 生成
-│       │       ├── video_generate.rs  # 视频生成（远程）
-│       │       ├── local_video.rs     # 视频本地兜底
-│       │       ├── agnes_media.rs     # Agnes 图像/视频服务
-│       │       ├── web_search.rs      # 联网搜索
-│       │       └── mod.rs             # 工具注册表
-│       ├── llm/              # OpenAI 兼容 LLM Client（流式 + 非流式）
-│       ├── auth/             # JWT 认证中间件
-│       ├── db/               # SQLite 连接池 + migration + repository
-│       ├── models/           # 数据模型
-│       ├── render/           # DOCX / XLSX 纯 Rust 渲染
-│       └── routes/           # API 路由（12 个模块）
-│           ├── chat.rs       # SSE 流式 Agent 对话
-│           ├── auth.rs       # 登录 / 注册 / 验证码
-│           ├── session.rs    # 会话管理
-│           ├── project.rs    # 项目管理
-│           ├── file.rs       # 文件上传 / 下载
-│           ├── settings.rs   # 模型切换 / 系统配置
-│           ├── dashboard.rs  # 统计面板
-│           ├── doc_export.rs # 文档导出
-│           ├── notification.rs # 通知
-│           ├── embed.rs      # 嵌入式静态资源
-│           └── health.rs     # 健康检查
-├── frontend/                 # React 前端（~9000 行）
+│       ├── main.rs           # Entry point
+│       ├── config.rs         # Environment-variable configuration
+│       ├── state.rs          # Application state
+│       ├── error.rs          # Unified error handling
+│       ├── file_extract.rs   # File content extraction
+│       ├── image_ocr.rs      # OCR for images
+│       ├── agent/            # Agent engine
+│       │   ├── mod.rs        # ReAct loop + context management
+│       │   └── tools/        # Built-in tools (13)
+│       │       ├── ppt_plan.rs        # Slide outline planning
+│       │       ├── ppt_generate.rs    # Slide deck generation
+│       │       ├── doc_generate.rs    # Document generation
+│       │       ├── sheet_generate.rs  # Spreadsheet generation
+│       │       ├── chart_generate.rs  # Chart generation
+│       │       ├── drawio_generate.rs # Flowchart generation
+│       │       ├── md_generate.rs     # Markdown generation
+│       │       ├── image_prompt.rs    # Image prompt + generation
+│       │       ├── video_generate.rs  # Video generation (remote)
+│       │       ├── local_video.rs     # Local video fallback
+│       │       ├── agnes_media.rs     # Agnes image / video service
+│       │       ├── web_search.rs      # Web search
+│       │       └── mod.rs             # Tool registry
+│       ├── llm/              # OpenAI-compatible LLM client (streaming + non-streaming)
+│       ├── auth/             # JWT authentication middleware
+│       ├── db/               # SQLite pool + migrations + repositories
+│       ├── models/           # Data models
+│       ├── render/           # Pure-Rust DOCX / XLSX rendering
+│       └── routes/           # API routes (12 modules)
+│           ├── chat.rs       # Streaming agent conversation over SSE
+│           ├── auth.rs       # Login / registration / verification code
+│           ├── session.rs    # Session management
+│           ├── project.rs    # Project management
+│           ├── file.rs       # File upload / download
+│           ├── settings.rs   # Model switching / system settings
+│           ├── dashboard.rs  # Statistics dashboard
+│           ├── doc_export.rs # Document export
+│           ├── notification.rs # Notifications
+│           ├── embed.rs      # Embedded static assets
+│           └── health.rs     # Health check
+├── frontend/                 # React front end (~9,000 lines)
 │   └── src/
 │       ├── pages/            # Studio / Login / Files
-│       ├── components/       # 对话 / 产物展示 / PPT 预览 / 工具栏 / 设置
-│       ├── api/              # 统一 API 封装（SSE 解析）
-│       ├── stores/           # Zustand 状态管理
-│       ├── lib/              # 工具函数
-│       ├── types/            # TypeScript 类型定义
-│       └── config/           # 前端配置
-├── migrations/               # SQL 迁移脚本
-├── Dockerfile                # 三阶段构建（前端 → Rust → 运行时）
-├── docker-compose-walioffice.yml  # Docker Compose 部署配置
-├── build.sh                  # 构建并推送镜像
-├── .env.example              # 环境变量模板
-└── ARCHITECTURE.md           # 架构设计文档
+│       ├── components/       # Chat / artifact display / slide preview / toolbar / settings
+│       ├── api/              # Unified API layer (SSE parsing)
+│       ├── stores/           # Zustand state
+│       ├── lib/              # Utilities
+│       ├── types/            # TypeScript type definitions
+│       └── config/           # Front-end configuration
+├── migrations/               # SQL migration scripts
+├── Dockerfile                # Three-stage build (front end → Rust → runtime)
+├── docker-compose-walioffice.yml  # Docker Compose deployment
+├── build.sh                  # Build and push the image
+├── .env.example              # Environment-variable template
+└── ARCHITECTURE.md           # Architecture design document
 ```
 
-## 🚀 快速开始
+## 🚀 Quick start
 
-### 前置要求
+### Prerequisites
 
-- **Rust** 1.88+（含 cargo）
-- **Node.js** 20+（含 npm）
-- **ffmpeg**（可选，仅视频本地兜底需要）
+- **Rust** 1.88+ (with cargo)
+- **Node.js** 20+ (with npm)
+- **ffmpeg** (optional; only needed for the local video fallback)
 
-### 1. 配置环境变量
+### 1. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，填写以下必要配置：
+Edit `.env` and fill in the required settings:
 
 ```bash
-# ── 安全配置 ──
+# ── Security ──
 AIPPT_JWT_SECRET=your-random-secret-at-least-32-chars
 
-# ── 文本 LLM（必填）──
+# ── Text LLM (required) ──
 LLM_TEXT_BASE_URL=http://127.0.0.1:8777/v1
 LLM_TEXT_API_KEY=your-api-key
 LLM_TEXT_MODELS=glm_for_coding
 
-# ── 图片模型（必填）──
+# ── Image model (required) ──
 LLM_IMAGE_BASE_URL=https://apihub.agnes-ai.com
 LLM_IMAGE_API_KEY=your-api-key
 LLM_IMAGE_MODELS=agnes-image-2.1-flash
 
-# ── 视频模型（必填）──
+# ── Video model (required) ──
 LLM_VIDEO_BASE_URL=https://apihub.agnes-ai.com
 LLM_VIDEO_API_KEY=your-api-key
 LLM_VIDEO_MODELS=agnes-video-v2.0
 ```
 
-> 完整配置项见 `.env.example`，包括搜索源、数据目录、CORS 等。
+> See `.env.example` for every option, including search sources, data directories and CORS.
 
-### 2. 本地开发
+### 2. Local development
 
 ```bash
-# 方式一：同时启动前后端（推荐）
+# Option 1: start front end and back end together (recommended)
 npm install
 npm run dev
-# 前端: http://localhost:5173（热更新）
-# 后端: http://localhost:8000
+# Front end: http://localhost:5173 (hot reload)
+# Back end:  http://localhost:8000
 
-# 方式二：分别启动
-cd server && cargo run          # 终端 1：Rust 服务端
-cd frontend && npm install && npm run dev  # 终端 2：前端 dev server
+# Option 2: start them separately
+cd server && cargo run          # Terminal 1: Rust server
+cd frontend && npm install && npm run dev  # Terminal 2: front-end dev server
 ```
 
-### 3. 生产构建（单一二进制）
+### 3. Production build (single binary)
 
 ```bash
-# 构建前端 → 构建后端（前端产物自动嵌入二进制）
+# Build the front end → build the back end (the front-end build is embedded automatically)
 npm run build
 
-# 运行
+# Run
 ./server/target/release/walioffice
-# 访问 http://localhost:8000
+# Open http://localhost:8000
 ```
 
-### 4. Docker 部署
+### 4. Docker deployment
 
 ```bash
-# 使用预构建镜像
+# Use the prebuilt image
 docker compose -f docker-compose-walioffice.yml up -d
 
-# 或从源码构建
+# Or build from source
 docker build -t walioffice .
 docker run -p 8000:8000 -v ./data:/app/data walioffice
 ```
 
-> 云服务器完整部署流程（含 Nginx + HTTPS）见 [DEPLOY.md](DEPLOY.md)。
+> For a full cloud-server deployment (including Nginx + HTTPS), see [DEPLOY.md](DEPLOY.md).
 
-## 🔧 Agent 工具
+## 🔧 Agent tools
 
-Agent 通过 ReAct 循环自动编排以下工具，用户无需手动选择：
+The agent orchestrates these tools automatically through its ReAct loop; users never have to pick one:
 
-| 工具 | 功能 | 输出格式 |
+| Tool | What it does | Output |
 |------|------|----------|
-| `ppt_plan` | 规划 PPT 大纲和结构 | JSON |
-| `ppt_generate` | 生成完整 PPT（含视觉设计） | 幻灯片预览 |
-| `doc_generate` | 生成文档（报告 / PRD / 计划等） | 可导出 `.docx` |
-| `md_generate` | 生成 Markdown 文档 | Markdown |
-| `sheet_generate` | 生成结构化表格 | 可导出 `.xlsx` |
-| `chart_generate` | 基于数据生成可视化图表 | 图表 |
-| `drawio_generate` | 生成流程图 / 架构图 | draw.io XML |
-| `image_prompt` | 生成图片提示词并调用文生图 | 图片 |
-| `video_generate` | 调用文生视频模型生成视频 | MP4 |
-| `web_search` | 联网搜索实时信息 | 搜索结果摘要 |
+| `ppt_plan` | Plans a slide deck's outline and structure | JSON |
+| `ppt_generate` | Generates a complete deck (with visual design) | Slide preview |
+| `doc_generate` | Generates documents (reports / PRDs / plans, etc.) | Exportable `.docx` |
+| `md_generate` | Generates Markdown documents | Markdown |
+| `sheet_generate` | Generates structured tables | Exportable `.xlsx` |
+| `chart_generate` | Generates visual charts from data | Chart |
+| `drawio_generate` | Generates flowcharts / architecture diagrams | draw.io XML |
+| `image_prompt` | Writes an image prompt and calls text-to-image | Image |
+| `video_generate` | Calls a text-to-video model | MP4 |
+| `web_search` | Searches the web for current information | Search result summary |
 
-## 📡 API 接口
+## 📡 API
 
-| 路由 | 方法 | 说明 |
+| Route | Method | Description |
 |------|------|------|
-| `/api/auth/login` | POST | 账号密码登录 |
-| `/api/auth/register` | POST | 注册 |
-| `/api/auth/me` | GET | 获取当前用户信息 |
-| `/api/chat/stream` | POST | SSE 流式 Agent 对话 |
-| `/api/chat/sessions` | GET | 会话列表 |
-| `/api/session/:id` | GET | 获取会话详情 |
-| `/api/session/:id` | DELETE | 删除会话 |
-| `/api/project/list` | GET | 项目列表 |
-| `/api/project/:id` | GET | 获取项目详情 |
-| `/api/file/upload` | POST | 文件上传 |
-| `/api/file/download/:id` | GET | 文件下载 |
-| `/api/doc/export` | POST | 导出 DOCX |
-| `/api/excel/export` | POST | 导出 XLSX |
-| `/api/settings/models` | GET | 获取可用模型列表 |
-| `/api/settings/model` | PUT | 切换当前模型 |
-| `/api/dashboard/stats` | GET | 统计数据 |
-| `/api/notification/list` | GET | 通知列表 |
-| `/api/health` | GET | 健康检查 |
+| `/api/auth/login` | POST | Username + password login |
+| `/api/auth/register` | POST | Register |
+| `/api/auth/me` | GET | Current user |
+| `/api/chat/stream` | POST | Streaming agent conversation over SSE |
+| `/api/chat/sessions` | GET | Session list |
+| `/api/session/:id` | GET | Session details |
+| `/api/session/:id` | DELETE | Delete a session |
+| `/api/project/list` | GET | Project list |
+| `/api/project/:id` | GET | Project details |
+| `/api/file/upload` | POST | Upload a file |
+| `/api/file/download/:id` | GET | Download a file |
+| `/api/doc/export` | POST | Export DOCX |
+| `/api/excel/export` | POST | Export XLSX |
+| `/api/settings/models` | GET | Available models |
+| `/api/settings/model` | PUT | Switch the current model |
+| `/api/dashboard/stats` | GET | Statistics |
+| `/api/notification/list` | GET | Notifications |
+| `/api/health` | GET | Health check |
 
-## 🐳 Docker 构建说明
+## 🐳 Docker build
 
-Dockerfile 采用三阶段构建：
+The Dockerfile uses a three-stage build:
 
-1. **Stage 1 — 前端构建**：`node:20-slim`，npm ci + build
-2. **Stage 2 — Rust 构建**：`rust:1.88-bookworm`，cargo build --release（使用 USTC crates 镜像加速）
-3. **Stage 3 — 运行时**：`ubuntu:22.04`，仅包含二进制 + ffmpeg + 最小依赖
+1. **Stage 1 — front end**: `node:20-slim`, npm ci + build
+2. **Stage 2 — Rust**: `rust:1.88-bookworm`, cargo build --release (using the USTC crates mirror)
+3. **Stage 3 — runtime**: `ubuntu:22.04`, containing only the binary + ffmpeg + minimal dependencies
 
-运行时镜像基于 `ubuntu:22.04` 并安装 ffmpeg，其中 walioffice 二进制（release，内嵌前端与 DataFusion 数据引擎）约 69MB，启动即用。release 构建（LTO + 单 codegen unit）首次约需 8–9 分钟。
+The runtime image is based on `ubuntu:22.04` with ffmpeg installed. The walioffice binary (release build, with the front end and the DataFusion data engine embedded) is about 69 MB and ready to run. A first release build (LTO + a single codegen unit) takes about 8–9 minutes.
 
-## ⚙️ 环境变量参考
+## ⚙️ Environment variables
 
-| 变量 | 必填 | 默认值 | 说明 |
+| Variable | Required | Default | Description |
 |------|------|--------|------|
-| `AIPPT_JWT_SECRET` | ✅ | — | JWT 签名密钥，生产环境必须修改 |
-| `AIPPT_PORT` | ❌ | `8000` | 服务端口 |
-| `AIPPT_HOST` | ❌ | `0.0.0.0` | 监听地址 |
-| `LLM_TEXT_BASE_URL` | ✅ | — | 文本 LLM API 地址 |
-| `LLM_TEXT_API_KEY` | ✅ | — | 文本 LLM API Key |
-| `LLM_TEXT_MODELS` | ✅ | — | 可用文本模型列表（逗号分隔） |
-| `LLM_IMAGE_BASE_URL` | ✅ | — | 图片模型 API 地址 |
-| `LLM_IMAGE_API_KEY` | ✅ | — | 图片模型 API Key |
-| `LLM_IMAGE_MODELS` | ✅ | — | 可用图片模型列表 |
-| `LLM_VIDEO_BASE_URL` | ✅ | — | 视频模型 API 地址 |
-| `LLM_VIDEO_API_KEY` | ✅ | — | 视频模型 API Key |
-| `LLM_VIDEO_MODELS` | ✅ | — | 可用视频模型列表 |
-| `AIPPT_WEB_SEARCH_PROVIDER` | ❌ | `auto` | 搜索源：`auto` / `searxng` / `duckduckgo` |
-| `AIPPT_CORS_ORIGINS` | ❌ | — | CORS 允许来源（逗号分隔） |
-| `AIPPT_DATA_DIR` | ❌ | `data` | 数据存储目录 |
+| `AIPPT_JWT_SECRET` | ✅ | — | JWT signing key; must be changed in production |
+| `AIPPT_PORT` | ❌ | `8000` | Server port |
+| `AIPPT_HOST` | ❌ | `0.0.0.0` | Listen address |
+| `LLM_TEXT_BASE_URL` | ✅ | — | Text LLM API URL |
+| `LLM_TEXT_API_KEY` | ✅ | — | Text LLM API key |
+| `LLM_TEXT_MODELS` | ✅ | — | Available text models (comma-separated) |
+| `LLM_IMAGE_BASE_URL` | ✅ | — | Image model API URL |
+| `LLM_IMAGE_API_KEY` | ✅ | — | Image model API key |
+| `LLM_IMAGE_MODELS` | ✅ | — | Available image models |
+| `LLM_VIDEO_BASE_URL` | ✅ | — | Video model API URL |
+| `LLM_VIDEO_API_KEY` | ✅ | — | Video model API key |
+| `LLM_VIDEO_MODELS` | ✅ | — | Available video models |
+| `AIPPT_WEB_SEARCH_PROVIDER` | ❌ | `auto` | Search source: `auto` / `searxng` / `duckduckgo` |
+| `AIPPT_CORS_ORIGINS` | ❌ | — | Allowed CORS origins (comma-separated) |
+| `AIPPT_DATA_DIR` | ❌ | `data` | Data storage directory |
 
-> 完整配置见 [`.env.example`](.env.example)。
+> See [`.env.example`](.env.example) for the full configuration.
 
-## 📌 登录说明
+## 📌 Signing in
 
-- 登录页（`/login`）使用**账号密码登录**，没有账号可以直接在页面上注册（用户名至少 3 个字符，密码至少 6 位）
-- 旧的验证码登录接口 `/api/auth/verification-login` 仍保留在后端，需要时配置 `WALIOFFICE_X_API_AUTH_LOGIN_URL` 指向验证服务；登录页不再使用
-- 管理后台已暂时移除，启动时不再创建默认管理员账号
+- The login page (`/login`) uses **username + password**; if you have no account you can register on the same page (username at least 3 characters, password at least 6)
+- The old verification-code login endpoint `/api/auth/verification-login` is still in the back end; set `WALIOFFICE_X_API_AUTH_LOGIN_URL` to a verification service if you need it. The login page no longer uses it
+- The admin console has been removed for now, and no default admin account is created at startup
 
-## 📄 相关文档
+## 📄 Related documents
 
-- [架构设计](ARCHITECTURE.md) — 技术分层、模块职责、数据流
-- [部署指南](DEPLOY.md) — 云服务器完整部署流程（Docker + Nginx + HTTPS）
+- [Architecture](ARCHITECTURE.md) — technical layers, module responsibilities, data flow
+- [Deployment guide](DEPLOY.md) — full cloud-server deployment (Docker + Nginx + HTTPS)
 
 ## 📜 License
 
 MIT
 
-## 编辑器套件（suite/）
+## Editor suite (suite/)
 
-`suite/` 是 git submodule，指向 [CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite)：基于 [GenOffice](https://github.com/genspark-ai/genoffice)（Mainfunc, Inc.，Apache-2.0）修改的桌面编辑器套件（文档、表格、幻灯片、PDF、Markdown、HTML）。编辑器代码主要来自 GenOffice；OfficePilot 的改动见 `suite/OFFICEPILOT_CHANGES.md`。GenOffice 与 Genspark 是 Mainfunc, Inc. 的商标，本项目与其无隶属关系。
+`suite/` is a git submodule pointing to [CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite): a desktop editor suite (Docs, Sheets, Slides, PDF, Markdown, HTML) modified from [GenOffice](https://github.com/genspark-ai/genoffice) (Mainfunc, Inc., Apache-2.0). Most of the editor code comes from GenOffice; OfficePilot's changes are listed in `suite/OFFICEPILOT_CHANGES.md`. GenOffice and Genspark are trademarks of Mainfunc, Inc.; this project is not affiliated with Mainfunc, Inc.
 
 ```bash
 git submodule update --init suite
