@@ -1,10 +1,7 @@
 # OfficePilot
 
-> A web-based AI agent for office work: describe what you need in plain language and get slide decks, documents, spreadsheets, flowcharts, charts, images and videos in one step.
 
-This project is built on the open-source [fuzhengwei/WaLiOffice](https://github.com/fuzhengwei/WaLiOffice) (imported at commit `50ad355`), with a rebuilt agent core. The original project's feature overview follows further below.
-
-## 🧭 What this repository adds
+## 🧭 features
 
 | Module | What it does |
 |---|---|
