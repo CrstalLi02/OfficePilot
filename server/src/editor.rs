@@ -54,19 +54,42 @@ pub fn suite_app() -> Option<PathBuf> {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../suite/apps/shell/release/mac-arm64/OfficePilot Suite.app").canonicalize().ok()
 }
 
-/// 用编辑器套件打开文件；套件已经在运行时，由它的单实例机制转给现有窗口
-pub fn launch(app: &Path, file: &Path) -> AppResult<()> {
-    let mut cmd = if cfg!(target_os = "macos") && app.extension().is_some_and(|e| e == "app") {
-        let mut c = std::process::Command::new("open");
-        c.arg("-a").arg(app).arg(file);
-        c
+/// 套件程序本身（macOS 上是 .app 里的可执行文件）
+pub fn suite_executable(app: &Path) -> Option<PathBuf> {
+    if app.extension().is_some_and(|e| e == "app") {
+        std::fs::read_dir(app.join("Contents/MacOS")).ok()?.flatten().map(|e| e.path()).find(|p| p.is_file())
     } else {
-        let mut c = std::process::Command::new(app);
-        c.arg(file);
-        c
+        app.is_file().then(|| app.to_path_buf())
+    }
+}
+
+/// 用编辑器套件打开文件；套件已经在运行时，由它的单实例机制转给现有窗口。
+/// 共用 OfficePilot 的模型时先同步配置，并把密钥放进套件进程的环境变量
+/// （直接启动套件程序，密钥不出现在命令行参数里）。
+pub async fn launch(app: &Path, file: &Path) -> AppResult<()> {
+    let env = crate::suite_ai::prepare_launch().await;
+    let mut cmd = match (&env, cfg!(target_os = "macos") && app.extension().is_some_and(|e| e == "app")) {
+        (None, true) => {
+            let mut c = std::process::Command::new("open");
+            c.arg("-a").arg(app).arg(file);
+            c
+        }
+        _ => {
+            let exe = suite_executable(app).ok_or_else(|| bad("编辑器套件的程序文件不存在"))?;
+            let mut c = std::process::Command::new(exe);
+            c.arg(file);
+            c
+        }
     };
+    if let Some((key, value)) = env {
+        cmd.env(key, value);
+    }
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    cmd.spawn().map_err(|e| bad(format!("启动编辑器失败：{e}")))?;
+    let mut child = cmd.spawn().map_err(|e| bad(format!("启动编辑器失败：{e}")))?;
+    // 套件可能一直运行；在后台等它退出，避免留下僵尸进程
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 

@@ -492,7 +492,7 @@ impl OfficeTool for EditorOpenTool {
         };
         let opened = if target.is_empty() {
             match crate::editor::suite_app() {
-                Some(app) => crate::editor::launch(&app, &working).map_err(|e| e.to_string()),
+                Some(app) => crate::editor::launch(&app, &working).await.map_err(|e| e.to_string()),
                 None => Err("没有找到编辑器套件".into()),
             }
         } else {
@@ -701,7 +701,7 @@ esac
         let tree = Tree::load(&pool, "u1").await.unwrap();
         let file = tree.find_file("/季度报告.docx").unwrap().unwrap().clone();
         let working = crate::editor::prepare_copy(&root, "u1", &file).await.unwrap();
-        crate::editor::launch(&crate::editor::suite_app().unwrap(), &working).unwrap();
+        crate::editor::launch(&crate::editor::suite_app().unwrap(), &working).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         println!("selection: {}", selection(&pool, &root, "u1", "/季度报告.docx").await.unwrap_or_else(|e| format!("ERR {e}")));
         let _ = std::fs::remove_dir_all(&root);

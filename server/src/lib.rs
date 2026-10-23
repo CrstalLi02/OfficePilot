@@ -21,6 +21,7 @@ mod mcp;
 mod secrets;
 mod skills;
 mod state;
+mod suite_ai;
 mod suite_cli;
 mod tasks;
 mod workspace;

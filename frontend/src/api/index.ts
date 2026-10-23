@@ -141,8 +141,18 @@ export interface EditorStatus {
   agent_tools: string[]
 }
 
+export interface EditorAiSync {
+  available: boolean
+  enabled: boolean
+  profile_name: string | null
+  model: string | null
+  settings_file: string | null
+}
+
 export const editorApi = {
   status: () => api.get<EditorStatus>('/editor'),
+  aiSync: () => api.get<EditorAiSync>('/editor/ai-sync'),
+  setAiSync: (enabled: boolean) => api.post<EditorAiSync>('/editor/ai-sync', { enabled }),
   openFile: (id: string) => api.post<{ opened: boolean; path: string }>(`/files/${id}/open-in-editor`),
   openArtifact: (artifactId: string, sessionId: string) =>
     api.post<{ opened: boolean; path: string; file_path: string; file_id: string }>(`/artifacts/${artifactId}/open-in-editor`, { session_id: sessionId }),

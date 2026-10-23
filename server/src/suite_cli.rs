@@ -29,8 +29,7 @@ fn command() -> Option<(PathBuf, Vec<OsString>)> {
     }
     let app = crate::editor::suite_app()?;
     let (exe, script) = if app.extension().is_some_and(|e| e == "app") {
-        let exe = std::fs::read_dir(app.join("Contents/MacOS")).ok()?.flatten().map(|e| e.path()).find(|p| p.is_file())?;
-        (exe, app.join("Contents/Resources/cli/genoffice.cjs"))
+        (crate::editor::suite_executable(&app)?, app.join("Contents/Resources/cli/genoffice.cjs"))
     } else {
         (app.clone(), app.parent()?.join("resources/cli/genoffice.cjs"))
     };
@@ -86,7 +85,13 @@ pub async fn run(args: &[OsString], cwd: &Path, timeout: Duration) -> Result<Val
     full.extend(args.iter().cloned());
     full.push("--json".into());
     let _slot = SLOTS.acquire().await.map_err(|e| e.to_string())?;
-    let child = tokio::process::Command::new(&exe)
+    // `open` 等命令可能顺带启动套件：共用模型时它也要拿到密钥
+    let env = crate::suite_ai::prepare_launch().await;
+    let mut cmd = tokio::process::Command::new(&exe);
+    if let Some((key, value)) = env {
+        cmd.env(key, value);
+    }
+    let child = cmd
         .args(&full)
         .current_dir(cwd)
         .env("ELECTRON_RUN_AS_NODE", "1")

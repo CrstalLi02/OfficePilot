@@ -331,6 +331,8 @@ In the desktop app, every Word, Excel, PowerPoint, PDF, Markdown or HTML file in
 
 The desktop assistant can also use the suite directly: `office_convert` (PDF → Word / Excel / PowerPoint, anything → PDF, HTML → Word), `office_merge` (fill `{{placeholders}}` in a Word / PowerPoint / Excel template), `office_check` (broken references, stale TOC, formula errors, text overflow), `office_render` (page images shown to the user), `editor_selection` (what the user has selected in the editor) and `editor_open`. Results are saved as new files in the workspace and can be undone.
 
+Settings → Integrations → Editor suite has a switch that lets the suite's own AI assistant use the model configured in OfficePilot. OfficePilot adds an "OfficePilot（同步）" endpoint to the suite's `ai-settings.json` (address and model only) and passes the API key to the suite through an environment variable when it opens the editor, so the key is never written into the suite's settings file. Turning the switch off removes the endpoint and restores the suite's previous choice.
+
 ```bash
 scripts/build-suite.sh      # suite/apps/shell/release/mac-arm64/OfficePilot Suite.app (also used in development)
 scripts/build-desktop.sh    # OfficePilot.app with the suite inside Contents/Resources/suite/, plus a dmg
