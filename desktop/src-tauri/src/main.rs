@@ -8,7 +8,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::json;
 use tauri::menu::{Menu, MenuItem};
@@ -17,86 +16,13 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, Wind
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-/// 优先使用的端口：固定端口让页面来源不变，浏览器本地存储里的偏好可以保留
-const PREFERRED_PORT: u16 = 17860;
-
 struct DesktopState {
     data_root: PathBuf,
 }
 
-/// JWT 密钥：第一次启动时生成并保存在数据目录
-fn jwt_secret(root: &Path) -> anyhow::Result<String> {
-    let file = root.join(".jwt-secret");
-    if let Ok(secret) = std::fs::read_to_string(&file) {
-        if secret.trim().len() >= 32 {
-            return Ok(secret.trim().to_string());
-        }
-    }
-    let secret = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
-    std::fs::write(&file, &secret)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(secret)
-}
-
-/// 从图形界面启动时 PATH 很短（macOS 只有 /usr/bin 等），本地命令插件常用的 npx / uvx 找不到。
-/// 取登录 shell 的 PATH，再补上常见的安装目录。
-fn desktop_path() -> String {
-    let mut parts: Vec<String> = Vec::new();
-    #[cfg(unix)]
-    {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let out = std::process::Command::new(shell).args(["-lc", "printf %s \"$PATH\""]).output();
-            let _ = tx.send(out);
-        });
-        if let Ok(Ok(out)) = rx.recv_timeout(Duration::from_secs(3)) {
-            parts.extend(String::from_utf8_lossy(&out.stdout).split(':').map(str::to_string));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            for dir in [".local/bin", ".cargo/bin", ".volta/bin", ".bun/bin"] {
-                parts.push(home.join(dir).to_string_lossy().into_owned());
-            }
-        }
-        parts.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(str::to_string));
-    }
-    if let Ok(current) = std::env::var("PATH") {
-        parts.extend(std::env::split_paths(&current).map(|p| p.to_string_lossy().into_owned()));
-    }
-    let mut seen = std::collections::HashSet::new();
-    parts.retain(|p| !p.is_empty() && seen.insert(p.clone()));
-    std::env::join_paths(parts).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-/// 服务端从环境变量读取配置：在第一次读取配置之前设置好
+/// 服务端从环境变量读取配置（与新版桌面外壳共用 walioffice::desktop），再补上本应用附带的命令行和编辑器套件
 fn configure_env(root: &Path, port: u16) -> anyhow::Result<()> {
-    let data = root.join("data");
-    std::fs::create_dir_all(&data)?;
-    let db = data.join("walioffice.db");
-    let vars: Vec<(&str, String)> = vec![
-        ("WALIOFFICE_DESKTOP", "1".into()),
-        ("AIPPT_APP_NAME", "OfficePilot".into()),
-        ("AIPPT_HOST", "127.0.0.1".into()),
-        ("AIPPT_PORT", port.to_string()),
-        ("AIPPT_DATA_DIR", data.to_string_lossy().into_owned()),
-        ("AIPPT_PROJECTS_DIR", data.join("projects").to_string_lossy().into_owned()),
-        ("AIPPT_SESSIONS_DIR", data.join("sessions").to_string_lossy().into_owned()),
-        ("AIPPT_RENDER_OUTPUT_DIR", root.join("outputs").to_string_lossy().into_owned()),
-        // 路径里可能有空格（Application Support）
-        ("DATABASE_URL", format!("sqlite://{}?mode=rwc", db.to_string_lossy().replace(' ', "%20"))),
-        ("AIPPT_JWT_SECRET", jwt_secret(root)?),
-        // 桌面版长时间运行：令牌有效期放长，每次启动重新签发
-        ("AIPPT_JWT_EXPIRY_HOURS", "87600".into()),
-        ("WALIOFFICE_MCP_STDIO", "1".into()),
-        ("WALIOFFICE_MCP_ALLOW_PRIVATE", "1".into()),
-        ("WALIOFFICE_LOCAL_FOLDERS", "1".into()),
-        ("PATH", desktop_path()),
-    ];
+    walioffice::desktop::configure_env(root, port)?;
     // 随安装包附带的 officepilot 命令行（sidecar，与主程序在同一目录）
     if let Some(cli) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(if cfg!(windows) { "officepilot.exe" } else { "officepilot" }))).filter(|p| p.is_file()) {
         std::env::set_var("OFFICEPILOT_CLI", cli);
@@ -104,9 +30,6 @@ fn configure_env(root: &Path, port: u16) -> anyhow::Result<()> {
     // 随安装包附带的编辑器套件（Contents/Resources/suite/），开发时由服务端在仓库里查找
     if let Some(suite) = suite_app() {
         std::env::set_var("OFFICEPILOT_SUITE_APP", suite);
-    }
-    for (key, value) in vars {
-        std::env::set_var(key, value);
     }
     Ok(())
 }
@@ -119,7 +42,7 @@ fn suite_app() -> Option<PathBuf> {
 }
 
 fn bind_listener() -> anyhow::Result<std::net::TcpListener> {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).or_else(|_| std::net::TcpListener::bind(("127.0.0.1", 0)))?;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", walioffice::desktop::PREFERRED_PORT)).or_else(|_| std::net::TcpListener::bind(("127.0.0.1", 0)))?;
     listener.set_nonblocking(true)?;
     Ok(listener)
 }

@@ -11,7 +11,7 @@ import { ConversationSidebar } from '@/components/history/ConversationSidebar'
 import { ArtifactPanel } from '@/components/artifacts/ArtifactPanel'
 import { SkillsDialog } from '@/components/skills/SkillsDialog'
 import { TasksDialog } from '@/components/tasks/TasksDialog'
-import { SettingsDialog } from '@/components/settings/SettingsDialog'
+import { isSettingsSection, SettingsDialog, type SettingsSection } from '@/components/settings/SettingsDialog'
 import { ModelSetupDialog } from '@/components/settings/ModelSetupDialog'
 import { AlertCircle, CheckCircle2, Info, Play, X, PanelRightClose, PanelRight, Files, Menu, ListChecks, Settings } from 'lucide-react'
 import type { AgentMode, AppSettings, Artifact, ChatAttachment, ChatMessage, ConversationRecord, InputRef, LLMProfile, PersistedSession, PlanCardState, PlanDecisionKind, PlanDecisionPayload, PlanStep, ProjectMeta, SkillSummary, ToolKind, ToolConfigMap, WorkspaceFile } from '@/types'
@@ -193,7 +193,12 @@ export default function Studio() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [conversationQuery, setConversationQuery] = useState('')
   const [showPresent, setShowPresent] = useState(false)
-  const [activeView, setActiveView] = useState<'chat' | 'settings'>('chat')
+  // ?settings=<分组> 打开设置（桌面版从编辑器套件的设置跳过来）
+  const [settingsSection] = useState<SettingsSection | undefined>(() => {
+    const value = new URLSearchParams(window.location.search).get('settings')
+    return isSettingsSection(value) ? value : undefined
+  })
+  const [activeView, setActiveView] = useState<'chat' | 'settings'>(settingsSection ? 'settings' : 'chat')
   const [input, setInput] = useState('')
   const [selectedTheme, setSelectedTheme] = useState('default')
   const [followLatestSlide, setFollowLatestSlide] = useState(true)
@@ -2217,6 +2222,7 @@ export default function Studio() {
             {activeView === 'settings' ? (
               <SettingsDialog
                 open
+                initialSection={settingsSection}
                 settings={settings}
                 onClose={() => setActiveView('chat')}
                 onSave={handleSaveSettings}

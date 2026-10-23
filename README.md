@@ -327,6 +327,8 @@ git submodule update --init suite
 cd suite && npm ci && npm run native:build -w @genoffice/sheets && npm run build:all
 ```
 
+The OfficePilot desktop app is the suite's shell: it opens on the editors' home screen (recent files, folder tree, tabs), and the Assistant entry in the sidebar opens OfficePilot's chat, tasks and settings in a tab. The OfficePilot service runs as the app's background process and keeps running from the tray when every window is closed.
+
 In the desktop app, every Word, Excel, PowerPoint, PDF, Markdown or HTML file in My Files has an **Open in editor** button. OfficePilot copies the file to a working copy under `<data dir>/open/`, opens it in OfficePilot Suite, and syncs every save back into the workspace as an undoable operation. If the AI changes the same file while it is open in the editor, both versions are kept: the original keeps the AI's change and the editor's version is saved next to it as `<name>（编辑器版本）`.
 
 The desktop assistant can also use the suite directly: `office_convert` (PDF → Word / Excel / PowerPoint, anything → PDF, HTML → Word), `office_merge` (fill `{{placeholders}}` in a Word / PowerPoint / Excel template), `office_check` (broken references, stale TOC, formula errors, text overflow), `office_render` (page images shown to the user), `editor_selection` (what the user has selected in the editor) and `editor_open`. Results are saved as new files in the workspace and can be undone.
@@ -334,6 +336,6 @@ The desktop assistant can also use the suite directly: `office_convert` (PDF →
 Settings → Integrations → Editor suite has a switch that lets the suite's own AI assistant use the model configured in OfficePilot. OfficePilot adds an "OfficePilot（同步）" endpoint to the suite's `ai-settings.json` (address and model only) and passes the API key to the suite through an environment variable when it opens the editor, so the key is never written into the suite's settings file. Turning the switch off removes the endpoint and restores the suite's previous choice.
 
 ```bash
-scripts/build-suite.sh      # suite/apps/shell/release/mac-arm64/OfficePilot Suite.app (also used in development)
-scripts/build-desktop.sh    # OfficePilot.app with the suite inside Contents/Resources/suite/, plus a dmg
+scripts/build-suite.sh      # suite/apps/shell/release/mac-arm64/OfficePilot.app (editors only; also used in development)
+scripts/build-desktop.sh    # the OfficePilot desktop app: the suite shell plus the OfficePilot service, and a dmg
 ```

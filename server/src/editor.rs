@@ -37,6 +37,11 @@ pub fn enabled() -> bool {
     crate::config::is_desktop() || std::env::var("WALIOFFICE_LOCAL_EDITOR").map(|v| v == "1").unwrap_or(false)
 }
 
+/// 服务运行在编辑器套件外壳里（OfficePilot 桌面版），由外壳启动时设置
+pub fn embedded() -> bool {
+    std::env::var("OFFICEPILOT_EMBEDDED").map(|v| v == "1").unwrap_or(false)
+}
+
 pub fn supported(name: &str) -> bool {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
     SUPPORTED.contains(&ext.as_str())
@@ -46,12 +51,21 @@ pub fn open_root() -> PathBuf {
     PathBuf::from(&crate::config::config().data_dir).join("open")
 }
 
+/// 用来打开文件的编辑器：外壳内运行时就是本应用（路径不用，交给 [`launch`] 走控制通道），否则是 [`suite_app`]
+pub fn editor_app() -> Option<PathBuf> {
+    suite_app().or_else(|| embedded().then(PathBuf::new))
+}
+
 /// 编辑器套件的位置：桌面版由环境变量告知（随安装包附带）；本机开发时用仓库里构建好的 .app
 pub fn suite_app() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("OFFICEPILOT_SUITE_APP").map(PathBuf::from).filter(|p| p.exists()) {
         return Some(p);
     }
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../suite/apps/shell/release/mac-arm64/OfficePilot Suite.app").canonicalize().ok()
+    if embedded() {
+        return None;
+    }
+    let release = Path::new(env!("CARGO_MANIFEST_DIR")).join("../suite/apps/shell/release/mac-arm64");
+    ["OfficePilot.app", "OfficePilot Suite.app"].into_iter().find_map(|name| release.join(name).canonicalize().ok())
 }
 
 /// 套件程序本身（macOS 上是 .app 里的可执行文件）
@@ -67,6 +81,11 @@ pub fn suite_executable(app: &Path) -> Option<PathBuf> {
 /// 共用 OfficePilot 的模型时先同步配置，并把密钥放进套件进程的环境变量
 /// （直接启动套件程序，密钥不出现在命令行参数里）。
 pub async fn launch(app: &Path, file: &Path) -> AppResult<()> {
+    // 编辑器就是本应用（OfficePilot 桌面版 = 编辑器套件外壳）：通过它的控制通道新开一个标签页
+    if embedded() {
+        let scratch = crate::suite_cli::Scratch::new()?;
+        return crate::suite_cli::run(&["open".into(), file.as_os_str().to_owned()], &scratch.0, crate::suite_cli::SLOW).await.map(|_| ()).map_err(bad);
+    }
     let env = crate::suite_ai::prepare_launch().await;
     let mut cmd = match (&env, cfg!(target_os = "macos") && app.extension().is_some_and(|e| e == "app")) {
         (None, true) => {

@@ -18,13 +18,24 @@ pub fn router() -> Router {
         .route("/api/files/:id/open-in-editor", post(open_in_editor))
         .route("/api/artifacts/:artifact_id/open-in-editor", post(open_artifact_in_editor))
         .route("/api/editor/ai-sync", get(ai_sync_status).post(set_ai_sync))
+        .route("/api/editor/ai-sync/key", get(ai_sync_key))
+}
+
+/// 桌面外壳取共用的模型密钥（只在服务运行于外壳内、并且开启了共用时提供），放进编辑器 AI 的环境
+async fn ai_sync_key(_user: AuthUser) -> Result<Json<Value>, AppError> {
+    if !editor::embedded() {
+        return Err(AppError::NotFound("没有这个接口".into()));
+    }
+    let Some((_, state_file)) = crate::suite_ai::paths() else { return Ok(Json(json!({ "key": null }))) };
+    let key = crate::suite_ai::launch_env(&state::db_pool(), &state_file).await.map(|(_, k)| k);
+    Ok(Json(json!({ "key": key })))
 }
 
 fn ai_sync_json() -> Value {
     let paths = crate::suite_ai::paths();
     let state = paths.as_ref().map(|(_, s)| crate::suite_ai::load_state(s)).unwrap_or_default();
     json!({
-        "available": editor::enabled() && editor::suite_app().is_some(),
+        "available": editor::enabled() && editor::editor_app().is_some(),
         "enabled": state.enabled,
         "profile_name": state.profile_name,
         "model": state.model,
@@ -65,12 +76,13 @@ const EDITABLE_ARTIFACTS: &[&str] = &["document", "markdown", "sheet", "ppt"];
 /// 编辑器是否可用、在哪里，以及正在用编辑器打开的文件
 async fn status(user: AuthUser) -> Result<Json<Value>, AppError> {
     let enabled = editor::enabled();
-    let app = if enabled { editor::suite_app() } else { None };
+    let app = if enabled { editor::editor_app() } else { None };
     let open = if enabled { editor::list_open(&editor::open_root(), &user.0.id).await } else { Vec::new() };
     Ok(Json(json!({
         "enabled": enabled,
         "available": app.is_some(),
-        "app": app.map(|p| p.to_string_lossy().into_owned()),
+        // 外壳内运行时编辑器就是本应用
+        "app": app.map(|p| if editor::embedded() { "OfficePilot（本应用）".to_string() } else { p.to_string_lossy().into_owned() }),
         "supported": editor::SUPPORTED,
         "open": open,
         // 智能助手能用的编辑器套件工具
@@ -82,7 +94,7 @@ fn check_available() -> Result<std::path::PathBuf, AppError> {
     if !editor::enabled() {
         return Err(AppError::BadRequest("用编辑器打开需要桌面版".into()));
     }
-    editor::suite_app().ok_or_else(|| AppError::BadRequest("没有找到编辑器套件（OfficePilot Suite），请先运行 scripts/build-suite.sh 构建".into()))
+    editor::editor_app().ok_or_else(|| AppError::BadRequest("没有找到编辑器套件，请先运行 scripts/build-suite.sh 构建".into()))
 }
 
 async fn open_file(app: &std::path::Path, owner_id: &str, file: &file_repo::FileRow) -> Result<std::path::PathBuf, AppError> {

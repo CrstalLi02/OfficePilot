@@ -10,7 +10,13 @@ interface SettingsDialogProps {
   settings: AppSettings | null
   onClose: () => void
   onSave: (settings: AppSettings) => Promise<void> | void
+  /** 打开时先显示的分组（桌面版从编辑器套件的设置跳过来时用） */
+  initialSection?: SettingsSection
 }
+
+export type SettingsSection = 'llm' | 'base' | 'mcp' | 'im' | 'integrations'
+const SECTIONS: SettingsSection[] = ['llm', 'base', 'mcp', 'im', 'integrations']
+export const isSettingsSection = (v: string | null): v is SettingsSection => !!v && (SECTIONS as string[]).includes(v)
 
 const emptyProfile = (): LLMProfile => ({
   id: `profile-${Date.now()}`,
@@ -30,8 +36,8 @@ function getProfileKeys(profile: LLMProfile) {
   return Array.from(new Set(merged))
 }
 
-export function SettingsDialog({ open, settings, onClose, onSave }: SettingsDialogProps) {
-  const [section, setSection] = useState<'llm' | 'base' | 'mcp' | 'im' | 'integrations'>('llm')
+export function SettingsDialog({ open, settings, onClose, onSave, initialSection }: SettingsDialogProps) {
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm')
   const [draft, setDraft] = useState<AppSettings | null>(settings)
   const [saving, setSaving] = useState(false)
 

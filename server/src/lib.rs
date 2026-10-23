@@ -5,6 +5,7 @@ mod auth;
 mod config;
 mod data_engine;
 mod db;
+pub mod desktop;
 mod editor;
 mod error;
 mod eval;
@@ -101,10 +102,14 @@ pub async fn desktop_token() -> anyhow::Result<String> {
 
 /// 命令行入口：`walioffice` 启动服务，`walioffice eval …` 离线评测
 pub async fn cli_main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    // 桌面版的后台服务：walioffice desktop --data-root <目录> --ready-file <文件>（日志写到数据目录）
+    if args.get(1).map(String::as_str) == Some("desktop") {
+        return desktop::run(&args[2..]).await;
+    }
     init_logging();
 
     // 离线评测：walioffice eval [options]
-    let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("eval") {
         return eval::run(&args[2..]).await;
     }
