@@ -177,7 +177,11 @@ export function IntegrationsPanel() {
               <div className="text-xs text-surface-500">{editor.open.length ? `${editor.open.length} 个文件正在用编辑器编辑${editor.open.some((f) => f.dirty) ? '，有修改正在同步' : ''}` : '已就绪'}</div>
             </div>
           </div>
-        ) : (
+        ) : null}
+        {editor?.enabled && editor.app && editor.agent_tools.length > 0 && (
+          <div className="mt-2 text-xs leading-relaxed text-surface-500">智能助手也能使用编辑器套件：{editor.agent_tools.join('、')}。转换和填写模板的结果另存为新文件，可以撤销。</div>
+        )}
+        {!editor?.enabled || editor.app ? null : (
           <div className="mt-2 text-xs text-surface-500">没有找到编辑器套件。从源码构建：<code className="rounded bg-surface-100 px-1">scripts/build-suite.sh</code></div>
         )}
       </section>

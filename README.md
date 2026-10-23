@@ -329,6 +329,8 @@ cd suite && npm ci && npm run native:build -w @genoffice/sheets && npm run build
 
 In the desktop app, every Word, Excel, PowerPoint, PDF, Markdown or HTML file in My Files has an **Open in editor** button. OfficePilot copies the file to a working copy under `<data dir>/open/`, opens it in OfficePilot Suite, and syncs every save back into the workspace as an undoable operation. If the AI changes the same file while it is open in the editor, both versions are kept: the original keeps the AI's change and the editor's version is saved next to it as `<name>（编辑器版本）`.
 
+The desktop assistant can also use the suite directly: `office_convert` (PDF → Word / Excel / PowerPoint, anything → PDF, HTML → Word), `office_merge` (fill `{{placeholders}}` in a Word / PowerPoint / Excel template), `office_check` (broken references, stale TOC, formula errors, text overflow), `office_render` (page images shown to the user), `editor_selection` (what the user has selected in the editor) and `editor_open`. Results are saved as new files in the workspace and can be undone.
+
 ```bash
 scripts/build-suite.sh      # suite/apps/shell/release/mac-arm64/OfficePilot Suite.app (also used in development)
 scripts/build-desktop.sh    # OfficePilot.app with the suite inside Contents/Resources/suite/, plus a dmg

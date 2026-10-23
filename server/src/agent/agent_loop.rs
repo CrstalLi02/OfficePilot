@@ -152,6 +152,15 @@ const OFFICE_AGENT_PROMPT: &str = r#"你是 WaLiOffice 的智能办公 Agent，�
 ## 收尾
 工具执行完后简洁总结：生成了哪些产物、各自适合怎么用、做了哪些假设。"#;
 
+/// 桌面版找到编辑器套件时追加
+const SUITE_PROMPT: &str = r#"
+
+## 编辑器套件
+- 把 PDF 改成可编辑的 Word / Excel / PPT、导出 PDF、HTML 转 Word：用 office_convert（另存新文件，原文件不变）。
+- 用模板批量生成通知、合同、证书：用 office_merge 填写 {{占位符}}。
+- 交付修改过的文件前，或用户问文件有没有问题：用 office_check 体检；用户想看实际版式：用 office_render。
+- 用户提到“编辑器里选中的”“这里”“这一页”：先用 editor_selection 弄清指的是什么；用户想自己看或改某个文件：用 editor_open 打开。"#;
+
 /// 第一轮发给 LLM 的完整请求（系统提示词 + 历史 + 用户消息，以及暴露的工具）
 pub struct InitialRequest {
     pub conversation: Vec<ChatMessage>,
@@ -192,11 +201,11 @@ pub async fn build_initial_request(
     config: &AgentConfig,
     client: &crate::llm::LlmClient,
 ) -> InitialRequest {
-    let system_prompt = if config.system_prompt.is_empty() {
-        OFFICE_AGENT_PROMPT.to_string()
-    } else {
-        format!("{}\n\n{}", OFFICE_AGENT_PROMPT, config.system_prompt)
-    };
+    let mut base = OFFICE_AGENT_PROMPT.to_string();
+    if crate::suite_cli::available() {
+        base.push_str(SUITE_PROMPT);
+    }
+    let system_prompt = if config.system_prompt.is_empty() { base } else { format!("{}\n\n{}", base, config.system_prompt) };
     let function_defs = function_defs_for(config).await;
 
     // 上下文压缩

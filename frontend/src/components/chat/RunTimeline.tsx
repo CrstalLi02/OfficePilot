@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlarmClock, AlertCircle, Ban, Puzzle, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench } from 'lucide-react'
+import { AlarmClock, AlertCircle, Ban, Puzzle, Check, Clapperboard, FileEdit, FilePen, FileSearch, FolderOpen, FolderTree, Globe, Image as ImageIcon, LayoutDashboard, Loader2, PenTool, PieChart, Save, Sheet, Table2, Database, BookOpen, Undo2, Wrench, Repeat, ShieldCheck, TextSelect, PenLine } from 'lucide-react'
 import { workspaceApi } from '@/api'
 import { peakConcurrency, type AgentRunState, type ToolRun } from '@/lib/agent-run'
 
@@ -40,6 +40,12 @@ export const TOOL_META: Record<string, { label: string; icon: typeof Wrench }> =
   sheet_apply: { label: '修改 Excel', icon: Sheet },
   slides_read: { label: '读取 PPT', icon: FileSearch },
   slides_apply: { label: '修改 PPT', icon: LayoutDashboard },
+  office_convert: { label: '转换格式', icon: Repeat },
+  office_merge: { label: '填写模板', icon: FilePen },
+  office_check: { label: '文档体检', icon: ShieldCheck },
+  office_render: { label: '渲染页面', icon: ImageIcon },
+  editor_selection: { label: '读取编辑器选区', icon: TextSelect },
+  editor_open: { label: '在编辑器中打开', icon: PenLine },
 }
 
 function formatDuration(ms: number) {

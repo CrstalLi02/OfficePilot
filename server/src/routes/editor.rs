@@ -33,6 +33,8 @@ async fn status(user: AuthUser) -> Result<Json<Value>, AppError> {
         "app": app.map(|p| p.to_string_lossy().into_owned()),
         "supported": editor::SUPPORTED,
         "open": open,
+        // 智能助手能用的编辑器套件工具
+        "agent_tools": if crate::suite_cli::available() { vec!["转换格式", "填写模板", "文档体检", "渲染页面", "读取编辑器选区", "在编辑器中打开"] } else { vec![] },
     })))
 }
 
