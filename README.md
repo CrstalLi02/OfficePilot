@@ -346,21 +346,6 @@ with their inverse and can be undone.
 Any service with an OpenAI-compatible chat API. DeepSeek and Qwen have presets;
 everything else, local servers included, goes in the custom slot.
 
-## Acknowledgements
-
-- OfficePilot started from [fuzhengwei/WaLiOffice](https://github.com/fuzhengwei/WaLiOffice)
-  (imported at commit `50ad355`) and rebuilt its agent core, workspace, engine
-  and desktop app. The DeepSeek Harness plugin for it is at
-  [fuzhengwei/walioffice-dsh-plugin](https://github.com/fuzhengwei/walioffice-dsh-plugin).
-- The editor suite in `suite/` ([CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite))
-  is a modified version of [GenOffice](https://github.com/genspark-ai/genoffice)
-  by Mainfunc, Inc., licensed under Apache-2.0. Most of the editor code comes
-  from GenOffice; OfficePilot's changes are listed in
-  [`suite/OFFICEPILOT_CHANGES.md`](suite/OFFICEPILOT_CHANGES.md). The fork
-  removes the Genspark account and cloud proxy, usage analytics and the
-  upstream update feed. GenOffice and Genspark are trademarks of Mainfunc,
-  Inc.; this project is not affiliated with Mainfunc, Inc.
-
 ## License
 
 OfficePilot is released under the MIT License. The editor suite in `suite/`
