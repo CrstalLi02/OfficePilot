@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/readme/hero.png" alt="OfficePilot desktop: the home screen with quick-create cards for Docs, Sheets, Slides, Markdown, HTML and PDF, a recent-files list, and the Assistant entry in the sidebar" width="100%">
+<picture>
+  <source srcset="docs/assets/readme/hero-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="docs/assets/readme/hero.png" alt="OfficePilot desktop: the home screen with recent files and the Assistant entry, and a Word document open in a tab with the OfficePilot AI panel beside it" width="100%">
+</picture>
 </p>
 
 <h1 align="center">OfficePilot</h1>
@@ -68,12 +71,18 @@ full editor suite with its own AI panel.
 
 ## A tour
 
-Every screenshot below is the packaged desktop app on macOS, with sample
-documents made by the `officepilot` command line.
+Every screenshot below is the packaged desktop app on macOS (light and dark
+themes follow your GitHub setting), with sample documents made by the
+`officepilot` command line.
 
 ### 1 · Home — every file and every editor, one window
 
-<p align="center"><img src="docs/assets/readme/hero.png" alt="OfficePilot home screen with three recent files and their open tabs" width="100%"></p>
+<p align="center">
+<picture>
+  <source srcset="docs/assets/readme/home-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="docs/assets/readme/home.png" alt="OfficePilot home screen with quick-create cards, recent files and open document tabs" width="100%">
+</picture>
+</p>
 
 The desktop app opens on the editors' home screen: quick-create cards for each
 format, a recent-files list with type filters and full-text search, folders in
@@ -86,16 +95,27 @@ messages keep running.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/readme/docs.png" alt="OfficePilot Docs showing the Q3 Operating Review with headings, bullets and a table, next to the OfficePilot AI panel and its suggested actions"></td>
-<td width="50%"><img src="docs/assets/readme/sheets.png" alt="OfficePilot Sheets showing a Q3 sales workbook by month, region and product, next to the OfficePilot AI panel"></td>
+<td width="50%"><picture>
+  <source srcset="docs/assets/readme/docs-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="docs/assets/readme/docs.png" alt="OfficePilot Docs showing the Q3 Operating Review with headings, bullets and a table, next to the OfficePilot AI panel and its suggested actions" width="100%">
+</picture></td>
+<td width="50%"><picture>
+  <source srcset="docs/assets/readme/sheets-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="docs/assets/readme/sheets.png" alt="OfficePilot Sheets: a summary sheet with SUMIF formulas, percentage shares and a column chart of Q3 revenue by region, next to the OfficePilot AI panel" width="100%">
+</picture></td>
 </tr>
 <tr>
 <td><b>Docs</b> — opens <code>.docx</code> as Word lays it out: headings, lists, tables, headers and footers, comments and tracked changes. The AI panel summarizes, polishes, continues and fills placeholders, with every turn undoable.</td>
-<td><b>Sheets</b> — <code>.xlsx</code> with live formulas, charts, pivot tables and conditional formatting on a Rust workbook engine; ask questions about the data and get answers that cite the cells they used.</td>
+<td><b>Sheets</b> — <code>.xlsx</code> with live formulas, charts, pivot tables and conditional formatting on a Rust workbook engine. The summary here is <code>SUMIF</code>s and shares over the Orders sheet, charted natively; ask the panel about the data and get answers that cite the cells they used.</td>
 </tr>
 </table>
 
-<p align="center"><img src="docs/assets/readme/slides.png" alt="OfficePilot Slides showing the Aurora Launch Plan deck with a slide thumbnail strip" width="100%"></p>
+<p align="center">
+<picture>
+  <source srcset="docs/assets/readme/slides-dark.png" media="(prefers-color-scheme: dark)">
+  <img src="docs/assets/readme/slides.png" alt="OfficePilot Slides: the Aurora Launch Plan deck on its metrics slide, with the thumbnail strip and the OfficePilot AI panel" width="100%">
+</picture>
+</p>
 
 **Slides** — edit `.pptx` decks on a canvas with masters, layouts and smart
 guides, or have the AI plan a storyline and draft the slides. The PDF,
