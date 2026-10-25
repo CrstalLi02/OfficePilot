@@ -1,341 +1,367 @@
-# OfficePilot
+<p align="center">
+  <img src="docs/assets/readme/hero.png" alt="OfficePilot desktop: the home screen with quick-create cards for Docs, Sheets, Slides, Markdown, HTML and PDF, a recent-files list, and the Assistant entry in the sidebar" width="100%">
+</p>
 
+<h1 align="center">OfficePilot</h1>
 
-## 🧭 features
+<p align="center"><b>An open-source AI office agent with a full office suite built in.</b><br>
+Describe the work in plain language: OfficePilot plans it, edits your real Word, Excel and PowerPoint files, and hands the result to an editor you can keep working in.</p>
 
-| Module | What it does |
+<p align="center">
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+  <a href="suite/LICENSE"><img src="https://img.shields.io/badge/editor%20suite-Apache--2.0-blue" alt="Editor suite: Apache-2.0"></a>
+  <a href="https://github.com/CrstalLi02/OfficePilot/commits/main"><img src="https://img.shields.io/github/last-commit/CrstalLi02/OfficePilot" alt="Last commit"></a>
+  <a href="https://github.com/CrstalLi02/OfficePilot/stargazers"><img src="https://img.shields.io/github/stars/CrstalLi02/OfficePilot?style=flat" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/badge/Rust-axum%20%2B%20tokio-orange?logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white" alt="React 18">
+  <img src="https://img.shields.io/badge/desktop-Electron-47848f?logo=electron&logoColor=white" alt="Electron">
+</p>
+
+<p align="center">
+  <a href="#get-it"><b>Get it</b></a> ·
+  <a href="#a-tour"><b>Tour</b></a> ·
+  <a href="#the-assistant"><b>Assistant</b></a> ·
+  <a href="#native-office-editing"><b>Office engine</b></a> ·
+  <a href="#command-line-and-mcp-server"><b>CLI &amp; MCP</b></a> ·
+  <a href="#self-hosting"><b>Self-host</b></a> ·
+  <a href="#how-it-works"><b>How it works</b></a>
+</p>
+
+OfficePilot is an AI agent for office work that runs on your own machine or
+server. Ask for a report, a deck, a spreadsheet or a cleanup of your files; the
+agent breaks the job into steps, calls the right tools, and streams every step
+as it works. The results are real `.docx`, `.xlsx` and `.pptx` files in your
+workspace, not screenshots of documents, and the desktop app opens them in a
+full editor suite with its own AI panel.
+
+- **An agent that does the work.** A ReAct loop with parallel tool calls,
+  three modes (Craft, Plan, Ask), plans you can review before anything runs,
+  background tasks that survive a closed page, and schedules like "every Friday
+  at 5 pm, write my weekly report".
+- **Real Office files, edited in place.** The built-in engine rewrites only the
+  XML it changes and copies everything else byte for byte. Word edits can land
+  as tracked changes, Excel formulas stay live, and every change to a file in
+  the workspace can be undone in one click.
+- **A full editor suite on the desktop.** Docs, Sheets, Slides, PDF, Markdown
+  and HTML editors, adapted from [GenOffice](https://github.com/genspark-ai/genoffice).
+  Open any workspace file in an editor tab; your saves sync back, and if the
+  agent changed the same file meanwhile, both versions are kept.
+- **Your workspace, organized by the agent.** Search, read, sort, rename,
+  convert and export across My Files, with an undo record for every change and
+  no delete tool at all.
+- **Your model, your key.** Any OpenAI-compatible service (DeepSeek, Qwen,
+  GLM, local servers and more), with separate model lists for text, image and
+  video. Keys stay on your machine.
+- **Reaches you where you work.** Drive the agent from Feishu (Lark), extend
+  it with MCP plugins and `SKILL.md` skills, and give your coding agent the same
+  Office engine through the `officepilot` command line or its MCP server.
+
+### Get it
+
+- **Desktop (macOS, Apple Silicon):** build `OfficePilot.app` and a dmg with
+  `scripts/build-desktop.sh` (see [Desktop app](#desktop-app)). Signed
+  installers for macOS, Windows and Linux are not published yet.
+- **Server or Docker:** one Rust binary with the web UI embedded, or
+  `docker compose up` (see [Self-hosting](#self-hosting)).
+- **Command line:** `cargo install --path cli` gives you `officepilot`, the
+  Office engine without the agent (see [Command line and MCP server](#command-line-and-mcp-server)).
+
+## A tour
+
+Every screenshot below is the packaged desktop app on macOS, with sample
+documents made by the `officepilot` command line.
+
+### 1 · Home — every file and every editor, one window
+
+<p align="center"><img src="docs/assets/readme/hero.png" alt="OfficePilot home screen with three recent files and their open tabs" width="100%"></p>
+
+The desktop app opens on the editors' home screen: quick-create cards for each
+format, a recent-files list with type filters and full-text search, folders in
+the sidebar, and every open document in its own tab. **Assistant** in the
+sidebar opens the agent in a tab next to your documents. Closing every window
+keeps OfficePilot in the tray, so background tasks, schedules and Feishu
+messages keep running.
+
+### 2 · Docs, Sheets and Slides — the real file, an AI panel beside it
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/readme/docs.png" alt="OfficePilot Docs showing the Q3 Operating Review with headings, bullets and a table, next to the OfficePilot AI panel and its suggested actions"></td>
+<td width="50%"><img src="docs/assets/readme/sheets.png" alt="OfficePilot Sheets showing a Q3 sales workbook by month, region and product, next to the OfficePilot AI panel"></td>
+</tr>
+<tr>
+<td><b>Docs</b> — opens <code>.docx</code> as Word lays it out: headings, lists, tables, headers and footers, comments and tracked changes. The AI panel summarizes, polishes, continues and fills placeholders, with every turn undoable.</td>
+<td><b>Sheets</b> — <code>.xlsx</code> with live formulas, charts, pivot tables and conditional formatting on a Rust workbook engine; ask questions about the data and get answers that cite the cells they used.</td>
+</tr>
+</table>
+
+<p align="center"><img src="docs/assets/readme/slides.png" alt="OfficePilot Slides showing the Aurora Launch Plan deck with a slide thumbnail strip" width="100%"></p>
+
+**Slides** — edit `.pptx` decks on a canvas with masters, layouts and smart
+guides, or have the AI plan a storyline and draft the slides. The PDF,
+Markdown and HTML editors share the same panel: edit PDF text in place,
+convert PDF to Word, Excel or PowerPoint on the device, and build single-file
+HTML pages from a design brief.
+
+### 3 · The assistant — plans, tools and artifacts you can watch
+
+Ask in plain language. The assistant streams its reasoning and each tool call,
+and the results land in the artifact panel: documents, decks, sheets, charts,
+draw.io diagrams, images and videos, each with a version history you can diff
+and restore. In **Plan** mode it proposes the steps first; tick, comment and
+confirm, and it carries on from there.
+
+### 4 · My Files — a workspace the agent can organize, and you can undo
+
+Upload files or let the agent save its work here. Type `@` in the chat to point
+at a file. The agent can search the full text, read Word, PDF, PowerPoint and
+Excel, sort files into folders, rename and convert them, and every change it
+makes is recorded with its inverse. **Edit** opens a file in the editor suite;
+your saves come back as undoable versions.
+
+## The assistant
+
+| Capability | What you get |
 |---|---|
-| Streaming + parallel tool calls | Replies stream token by token. Tool calls in the same turn are split into segments by dependency; tools that can run in parallel run concurrently (configurable limit). Each tool runs in its own task with a timeout and panic isolation, and results are written back to the context in the original order |
-| Cancellable runs | `POST /api/chat/cancel` stops the LLM stream and any running tools; artifacts already produced are still saved. Refreshing the page does not interrupt a run |
-| Craft / Plan / Ask modes | Keyword-based intent rules were removed; the model chooses tools from their descriptions. In Plan mode the agent first submits a plan (`propose_plan`); the user can tick steps and add comments, and the run resumes where it paused once confirmed — even after a page refresh |
-| Partial artifact edits | `artifact_edit` expands an artifact into a numbered view; the model returns semantic operations (by section / slide / cell / column, JSON Merge Patch for charts). The server validates and applies them, rewriting only the changed parts; any invalid operation rolls back the whole batch |
-| Artifact versions | Every generation, AI edit, manual edit and restore records a version; any two versions can be diffed line by line and restored in one click |
-| Workspace file tools | The agent can list folders, full-text search (with an extracted-text cache), and read Word / PDF / PPT / Excel files; create text files, export artifacts to a chosen folder, and batch-create folders / move / rename / convert to Markdown. Every write and reorganisation records its inverse operation and can be undone in one click; there is no delete. Type `@` in the input box to reference a file |
-| Data analysis | An in-process SQL engine (Apache DataFusion): `data_profile` shows a dataset's structure and summary, and `data_query` runs read-only SQL over csv / xlsx / json. Charts and tables are built straight from query results, not by the model. SQL text checks plus DataFusion `SQLOptions` forbid DDL / DML / SET, with limits on memory, time and result rows. GBK-encoded CSV is supported, and Excel sheets can be exported to csv |
-| Skills | Compatible with the open Agent Skills (SKILL.md) spec and OpenClaw extension fields. Eight built-in skills: weekly report, meeting minutes, PRD, competitive analysis, data analysis report, presentation deck, official document writing, and resume polishing. Progressive loading (the prompt lists only names and summaries → `use_skill` loads the body → `read_skill_file` reads templates). Type `/` in the input box to invoke one explicitly. Import from zip / SKILL.md (path-traversal protected, size limited), enable or disable, or create a skill from a conversation. Skills are reference instructions only; `allowed-tools` can only narrow the tool set |
-| Background tasks | Agent runs are decoupled from the web connection. Each run is stored as a task (queued / running / done / failed / stopped / awaiting confirmation / interrupted); each user can run up to 3 at once and the rest queue. Events go into a replay buffer, so refreshing the page or opening the session on another device picks the progress back up (SSE supports resuming). Closing the page keeps the task running and sends a notification when it finishes. Tasks left unfinished when the server restarts are marked interrupted and can be retried in one click. Manage them from the task panel in the top bar |
-| Scheduled tasks | Set up recurring tasks with 5-field cron (daily / weekdays / weekly / monthly / hourly / custom, minimum interval 10 minutes), triggered in the user's browser time zone. Ask in chat — e.g. "write my weekly report every Friday at 5 pm" — and the agent creates it with `schedule_create`, or create, edit, pause and run tasks from the task panel with a live preview of upcoming runs. Each trigger runs as a background task (Craft or Ask mode, in a new or a fixed session). A run is skipped if the previous one is still going, and runs missed while the server was down are made up only once. Every trigger keeps a run record |
-| IM remote control | Message the bot in Feishu (Lark) to put the agent to work. Events arrive over a long connection by default (no public address needed, works on a local machine), and an event callback URL (signature check + decryption) is also supported. Generate a 6-digit binding code on the web, then send `绑定 123456` ("bind 123456") in Feishu to start; group chats require @-mentioning the bot. Each Feishu conversation maps to one session and supports `/new`, `/mode 执行\|规划\|问答` (Craft / Plan / Ask), `/stop` and `/status`. While running, a card shows the steps live; when done it updates with the conclusion and sends back the generated Word / Excel / PPT / image files. In Plan mode, reply `确认` (confirm), `取消` (cancel) or your changes to handle the plan; plan cards also carry Confirm / Cancel buttons (card callbacks). Images are used as visual input; files are saved to My Files and handed to the agent to read or analyse (a file sent on its own is held until the next message says what to do with it). Results of scheduled tasks created in Feishu are pushed back to that conversation, and on the web you can choose which Feishu private chat or group a scheduled task reports to. App Secret and other keys are stored encrypted, events are de-duplicated, and each account is limited to 10 messages per minute |
-| MCP plugins | Connect any MCP server under Settings → Plugins (MCP): Streamable HTTP, legacy SSE, or a local command (stdio, must be enabled on the server); you can also paste a Claude Desktop / Cursor `mcpServers` JSON to import in one step. Tools join the agent's toolbox as `mcp__<id>__<tool>` and work on the web, in Feishu and in scheduled tasks. Read-only tools are available in Plan / Ask mode, while tools that may change data are only offered in Craft mode; calls to tools that are not offered are rejected. Headers and environment variables are stored encrypted, local commands do not inherit the server's environment, remote addresses on private networks / localhost are blocked by default (SSRF protection), and tool results are marked as external data to guard against prompt injection. Connections are reused, tool lists are cached, expired sessions reconnect automatically, and each tool can be switched on or off |
-| Plugin enhancements | **Confirm before calling**: a plugin's write operations (or every call, for plugins set to "always confirm") pause the run in place. The web shows a confirmation card (argument preview, countdown) and Feishu gets a card with buttons, with an option to "allow for this conversation". Requests left unanswered for 10 minutes are rejected, stopping the run ends the wait immediately, and scheduled tasks — with nobody there to answer — are rejected outright; a notification is sent if the page is closed. **Plugin catalog**: built-in entries verified against the official docs for DeepWiki, Context7, Amap, GitHub, Fetch and Time — fill in the required keys to add one (keys passed as URL parameters are also stored encrypted and never shown in the UI or error messages). **Resources and prompts**: plugin resources appear in the `@` menu and their content is passed to the agent when referenced; plugin prompts appear in the `/` menu, ask for any arguments first, and are rendered into the input box. In addition, the system prompt requires every action request to actually call a tool, so the model cannot claim something is "done" by copying earlier replies |
-| Desktop app | The OfficePilot desktop app packaged with Tauri 2 (`desktop/`): it starts the server in the same process, listens only on localhost, and signs in as the local user automatically. First launch walks through configuring a model service (with a connection test). Closing the window minimises to the tray while scheduled tasks and Feishu messages keep running. Local-command plugins are on by default, and files can be opened with the default app or shown in Finder. See [desktop/README.md](desktop/README.md) |
-| Native Office editing | `engine/` (`officepilot-engine`): reads and edits real `.docx` / `.xlsx` / `.pptx` files in place, rewriting only the XML fragments that change and copying every other zip entry byte for byte. Word: block-level read (paragraphs, headings, lists, tables), find/replace, rewrite, Markdown insert, delete, move, restyle, table cells and comments, optionally as tracked changes. Excel: values and live formulas (results computed and cached, dependent formulas recalculated), formats, column widths, frozen panes, sheets and native charts. PowerPoint: text, tables, speaker notes, duplicate / delete / reorder slides. A batch of operations either fully applies or leaves the file unchanged, and errors quote the original text. The agent uses it through `docs_*` / `sheet_*` / `slides_*` tools; edits save in place with a snapshot and one-click undo |
-| Command line | `cli/` (`officepilot`, ~2.5 MB): `info`, `read`, `apply` (`--dry-run`, `--track`, `--revision`, `--out`), `create` (docx from Markdown, xlsx from JSON / CSV, pptx from page specs), `convert` (docx / pptx → md / txt / html, xlsx → csv / md / html, md → docx / html, csv → xlsx), `slides check` / `slides audit` (overflow, overlap, off-slide and font-size checks without rendering), and a staged deck workflow (`deck start` → `deck page` → `deck build` → `deck replace`) with 12 layouts, native tables, editable charts, images and speaker notes. Every command supports `--json`; no model or network calls. Ships with an agent skill (`cli/skill/officepilot/SKILL.md`) and built-in guides (`officepilot guide`) |
-| MCP server and integrations | `officepilot mcp` exposes every command as an MCP tool (19 tools plus `officepilot://guide/*` resources) over stdio, or over Streamable HTTP with legacy SSE (`--http`), with Bearer tokens (required off localhost), Origin checks, per-session sandboxes, file upload / download and an allowed-roots policy. Settings → Integrations installs the skill into Claude Code, Codex, Cursor and Gemini CLI on click, copies MCP setup snippets, and (desktop) links the bundled command line into `~/.local/bin` |
-| Editor suite | `suite/`: the OfficePilot Suite desktop editors (Docs, Sheets, Slides, PDF, Markdown, HTML), a modified fork of [GenOffice](https://github.com/genspark-ai/genoffice) (Apache-2.0) kept as a git submodule. The fork removes the Genspark account and proxy, usage analytics and the upstream update feed, and rebrands every user-visible surface; see the section at the end of this README |
-| Routing evaluation | `walioffice eval`: 72 cases (5 of which need a plugin attached with `--mcp`). It reuses the production routing and request-building logic to evaluate the model's tool choices and writes a report per mode |
-| Fixes | Session history failed to load on SQLite, so the agent lost its context every turn; later tools in the same run could not see artifacts generated earlier in that run |
+| Streaming and parallel tools | Replies stream token by token. Independent tool calls in the same turn run concurrently, each in its own task with a timeout and panic isolation; results go back to the model in the original order. |
+| Craft, Plan and Ask modes | The model picks tools from their descriptions, with no keyword rules. Plan mode submits a plan (`propose_plan`) you can edit and confirm; the run resumes from the same point, even after a page refresh. |
+| Artifacts and versions | `artifact_edit` changes only the parts that need changing (a section, a slide, a cell, a chart field) and rolls back the whole batch if any step is invalid. Every generation, AI edit, manual edit and restore is a version you can diff and restore. |
+| Background tasks | Runs are decoupled from the browser connection: up to 3 at once per user, the rest queued. Refresh, switch devices or close the page; the task keeps going and notifies you when it finishes. Interrupted runs can be retried in one click. |
+| Scheduled tasks | Five-field cron in your time zone, created from chat ("every weekday at 9") or from the task panel with a preview of upcoming runs. Missed runs are made up once; every trigger keeps a record. |
+| Data analysis | An in-process SQL engine (Apache DataFusion) profiles and queries CSV, Excel and JSON read-only. Charts and tables are built from the query results, not typed by the model. |
+| Skills | Eight built-in `SKILL.md` skills: weekly report, meeting minutes, PRD, competitive analysis, data analysis report, presentation structure, official document and resume polish. Type `/` to use one, import your own, or turn a conversation into a skill. |
+| MCP plugins | Connect Streamable HTTP, SSE or local stdio MCP servers, or paste a Claude Desktop / Cursor `mcpServers` block. Write operations can require confirmation; keys are stored encrypted; private-network addresses are blocked by default; tool results are marked as external data. |
+| Feishu (Lark) | Message the bot to put the agent to work: long-connection events with no public address needed, live step cards, generated files sent back, plan confirmation from the chat, and scheduled results pushed to the conversation that asked. |
+| Editor suite tools | On the desktop the agent can also convert formats (PDF to Word, Excel or PowerPoint, anything to PDF, HTML to Word), fill `{{placeholders}}` in templates, check documents for broken references, stale tables of contents, formula errors and text overflow, render pages for you to see, read what you selected in an editor, and open a file there for you. |
 
-The architecture and development plans are recorded in each milestone's commits.
+### Agent tools
 
-WaLiOffice combines AI agent capabilities with office document generation: you describe what you need in a conversation, and the agent breaks the task down, calls tools and produces the artifacts, streaming everything over SSE so you can watch it think and build in real time. A production deployment is a single Rust binary (with the front-end assets embedded) that works out of the box.
+The agent chooses among these on its own; you never have to name one.
 
-You can also install the DeepSeek Harness Plugin: [https://github.com/fuzhengwei/walioffice-dsh-plugin](https://github.com/fuzhengwei/walioffice-dsh-plugin)
+| Area | Tools |
+|---|---|
+| Create | `doc_generate`, `md_generate`, `sheet_generate`, `ppt_plan`, `ppt_generate`, `chart_generate`, `drawio_generate`, `image_prompt`, `video_generate`, `video_storyboard`, `video_batch_generate` |
+| Edit Office files in place | `docs_read`, `docs_apply`, `sheet_read`, `sheet_apply`, `slides_read`, `slides_apply`, `artifact_edit` |
+| Workspace | `workspace_list`, `workspace_search`, `workspace_read`, `workspace_write`, `workspace_organize` |
+| Data | `data_profile`, `data_query` |
+| Editor suite (desktop) | `office_convert`, `office_merge`, `office_check`, `office_render`, `editor_selection`, `editor_open` |
+| Research and planning | `web_search`, `propose_plan`, `use_skill`, `read_skill_file` |
+| Schedules | `schedule_create`, `schedule_list` |
 
-## ✨ Features
+## AI backends
 
-- **Conversation-driven AI**: an agent engine built on a ReAct loop, with multi-turn conversations, context compression and automatic tool orchestration
-- **Slide decks**: outline planning → content → visual design, producing slides you can preview
-- **Documents**: reports, PRDs, plans and other document types, exportable to `.docx`
-- **Spreadsheets**: structured tables, exportable to `.xlsx`
-- **Charts**: visual charts generated from data
-- **Flowcharts**: draw.io XML output that can be edited online
-- **Images**: high-quality images from text-to-image models
-- **Videos**: text-to-video models, with a local `ffmpeg` fallback that assembles an MP4 when the remote service is unavailable
-- **Web search**: multiple search sources (SearXNG / DuckDuckGo); the agent can look up current information on its own
-- **File parsing**: content extraction and OCR for uploaded files, used as conversation context
-- **Multiple models**: separate model lists for text / image / video, switchable live from the settings page
-- **Authentication**: JWT; the login page supports username + password sign-in and registration
-- **Single-binary deployment**: Rust + rust-embed embed the front end into the back end, so one binary starts everything
-- **One-command Docker deployment**: multi-stage build with mirror acceleration for mainland China
+OfficePilot talks to any **OpenAI-compatible** endpoint. The first-run setup
+offers DeepSeek and Qwen (Alibaba Cloud Bailian) presets and a custom slot for
+everything else, including local model servers; Settings → Model services keeps
+several profiles with their own model lists and switches between them live.
+Image and video generation use their own endpoints and model lists. Web search
+goes through SearXNG or DuckDuckGo.
 
-## 🏗 Tech stack
+On the desktop, **Settings → Integrations → Editor suite → Use OfficePilot's
+model** lets the editors' AI panel share the same service. Only the address and
+model are written to the editor's settings; the key is handed to the editor
+process when OfficePilot starts it and never written to disk there.
 
-| Layer | Technology | Notes |
-|---|---|---|
-| Back-end framework | Rust + axum + tokio | High-performance async web framework |
-| Front-end framework | React 18 + TypeScript + Vite | SPA, embedded into the Rust binary after building |
-| Styling | TailwindCSS | Utility-first CSS |
-| State management | Zustand | Lightweight state management |
-| Database | SQLite (embedded) | Zero configuration; MySQL optional |
-| LLM interface | OpenAI-compatible | Works with any compatible endpoint, streaming SSE |
-| Document rendering | docx-rs + rust_xlsxwriter | Pure Rust, no external dependencies |
-| Authentication | JWT + bcrypt | Stateless authentication |
-| Static assets | rust-embed | Front-end build embedded at compile time |
-| Deployment | Docker / single binary | Multi-stage build; the release binary is about 69 MB (front end and DataFusion embedded) |
+## Native Office editing
 
-## 📐 Architecture overview
+`engine/` (`officepilot-engine`) reads and edits real Office files in place. It
+rewrites only the XML fragments that change and copies every other zip entry
+byte for byte; a batch of operations either fully applies or leaves the file
+untouched, and errors quote the original text.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  Browser / React UI                       │
-│  Studio · Login · Files · Settings                       │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP / SSE
-┌────────────────────────▼────────────────────────────────┐
-│                  Rust Axum Server                         │
-│  ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌──────────────┐ │
-│  │  Auth   │ │  Routes  │ │  Agent  │ │   Render     │ │
-│  │ (JWT)   │ │ (REST+   │ │ (ReAct) │ │ (DOCX/XLSX)  │ │
-│  │         │ │  SSE)    │ │         │ │              │ │
-│  └─────────┘ └──────────┘ └────┬───┘ └──────────────┘ │
-│                               │                         │
-│              ┌────────────────┼─────────────┐          │
-│              ▼                ▼             ▼          │
-│        ┌──────────┐  ┌──────────────┐ ┌──────────┐    │
-│        │   LLM    │  │    Tools     │ │  SQLite  │    │
-│        │  Client  │  │  Registry    │ │          │    │
-│        └──────────┘  └──────┬───────┘ └──────────┘    │
-│                             │                          │
-│    ┌──────┬──────┬─────────┼────────┬──────┬──────┐  │
-│    ▼      ▼      ▼         ▼        ▼      ▼      ▼  │
-│   PPT    DOC   Sheet    DrawIO   Image  Video  Search │
-└─────────────────────────────────────────────────────────┘
-```
+| Format | Operations |
+|---|---|
+| Word `.docx` | Block-level read (paragraphs, headings, lists, tables); find and replace, rewrite, insert Markdown, delete, move, restyle, table cells and comments; optionally as tracked changes |
+| Excel `.xlsx` | Values and live formulas (computed, cached, dependents recalculated), formats, column widths, frozen panes, new and renamed sheets, native charts |
+| PowerPoint `.pptx` | Text, tables and speaker notes; duplicate, delete and reorder slides; a staged deck builder with 12 layouts, native tables, editable charts, images and notes |
 
-## 📁 Project structure
+## Command line and MCP server
 
-```
-WaLiOffice/
-├── server/                   # Rust server (~14,000 lines)
-│   └── src/
-│       ├── main.rs           # Entry point
-│       ├── config.rs         # Environment-variable configuration
-│       ├── state.rs          # Application state
-│       ├── error.rs          # Unified error handling
-│       ├── file_extract.rs   # File content extraction
-│       ├── image_ocr.rs      # OCR for images
-│       ├── agent/            # Agent engine
-│       │   ├── mod.rs        # ReAct loop + context management
-│       │   └── tools/        # Built-in tools (13)
-│       │       ├── ppt_plan.rs        # Slide outline planning
-│       │       ├── ppt_generate.rs    # Slide deck generation
-│       │       ├── doc_generate.rs    # Document generation
-│       │       ├── sheet_generate.rs  # Spreadsheet generation
-│       │       ├── chart_generate.rs  # Chart generation
-│       │       ├── drawio_generate.rs # Flowchart generation
-│       │       ├── md_generate.rs     # Markdown generation
-│       │       ├── image_prompt.rs    # Image prompt + generation
-│       │       ├── video_generate.rs  # Video generation (remote)
-│       │       ├── local_video.rs     # Local video fallback
-│       │       ├── agnes_media.rs     # Agnes image / video service
-│       │       ├── web_search.rs      # Web search
-│       │       └── mod.rs             # Tool registry
-│       ├── llm/              # OpenAI-compatible LLM client (streaming + non-streaming)
-│       ├── auth/             # JWT authentication middleware
-│       ├── db/               # SQLite pool + migrations + repositories
-│       ├── models/           # Data models
-│       ├── render/           # Pure-Rust DOCX / XLSX rendering
-│       └── routes/           # API routes (12 modules)
-│           ├── chat.rs       # Streaming agent conversation over SSE
-│           ├── auth.rs       # Login / registration / verification code
-│           ├── session.rs    # Session management
-│           ├── project.rs    # Project management
-│           ├── file.rs       # File upload / download
-│           ├── settings.rs   # Model switching / system settings
-│           ├── dashboard.rs  # Statistics dashboard
-│           ├── doc_export.rs # Document export
-│           ├── notification.rs # Notifications
-│           ├── embed.rs      # Embedded static assets
-│           └── health.rs     # Health check
-├── frontend/                 # React front end (~9,000 lines)
-│   └── src/
-│       ├── pages/            # Studio / Login / Files
-│       ├── components/       # Chat / artifact display / slide preview / toolbar / settings
-│       ├── api/              # Unified API layer (SSE parsing)
-│       ├── stores/           # Zustand state
-│       ├── lib/              # Utilities
-│       ├── types/            # TypeScript type definitions
-│       └── config/           # Front-end configuration
-├── migrations/               # SQL migration scripts
-├── Dockerfile                # Three-stage build (front end → Rust → runtime)
-├── docker-compose-walioffice.yml  # Docker Compose deployment
-├── build.sh                  # Build and push the image
-├── .env.example              # Environment-variable template
-└── ARCHITECTURE.md           # Architecture design document
-```
-
-## 🚀 Quick start
-
-### Prerequisites
-
-- **Rust** 1.88+ (with cargo)
-- **Node.js** 20+ (with npm)
-- **ffmpeg** (optional; only needed for the local video fallback)
-
-### 1. Configure environment variables
+`officepilot` (about 2.5 MB, no model or network calls) puts the engine in your
+terminal and in your coding agent:
 
 ```bash
-cp .env.example .env
+officepilot info report.docx
+officepilot read report.docx --from 0 --to 20
+officepilot apply report.docx --ops edits.json --track      # tracked changes in Word
+officepilot create --type pptx --spec deck.json --out talk.pptx
+officepilot convert sales.xlsx --to csv
+officepilot slides audit talk.pptx                          # overflow, overlap, tiny fonts
+officepilot guide deck                                      # built-in guides for agents
 ```
 
-Edit `.env` and fill in the required settings:
+Every command supports `--json`. `officepilot mcp` serves the same commands as
+19 MCP tools plus `officepilot://guide/*` resources, over stdio or Streamable
+HTTP (`--http`, Bearer token required off localhost, per-session sandboxes,
+file upload and download, an allowed-roots policy).
+
+**Settings → Integrations** installs the bundled skill into Claude Code, Codex,
+Cursor and Gemini CLI with one click, shows ready-to-paste MCP snippets, and on
+the desktop links the command line into `~/.local/bin`:
 
 ```bash
-# ── Security ──
-AIPPT_JWT_SECRET=your-random-secret-at-least-32-chars
-
-# ── Text LLM (required) ──
-LLM_TEXT_BASE_URL=http://127.0.0.1:8777/v1
-LLM_TEXT_API_KEY=your-api-key
-LLM_TEXT_MODELS=glm_for_coding
-
-# ── Image model (required) ──
-LLM_IMAGE_BASE_URL=https://apihub.agnes-ai.com
-LLM_IMAGE_API_KEY=your-api-key
-LLM_IMAGE_MODELS=agnes-image-2.1-flash
-
-# ── Video model (required) ──
-LLM_VIDEO_BASE_URL=https://apihub.agnes-ai.com
-LLM_VIDEO_API_KEY=your-api-key
-LLM_VIDEO_MODELS=agnes-video-v2.0
+claude mcp add --transport stdio officepilot -- officepilot mcp
 ```
 
-> See `.env.example` for every option, including search sources, data directories and CORS.
+## Desktop app
 
-### 2. Local development
+The desktop app is the editor suite's shell with the OfficePilot service inside:
 
-```bash
-# Option 1: start front end and back end together (recommended)
-npm install
-npm run dev
-# Front end: http://localhost:5173 (hot reload)
-# Back end:  http://localhost:8000
+- The service (`walioffice desktop`) runs as a background process, listens on
+  `127.0.0.1` only, and signs you in as the local user automatically. It stops
+  when you quit from the tray.
+- Data lives in `~/Library/Application Support/com.officepilot.desktop`:
+  database, uploads, generated files and logs.
+- **Edit** on any Word, Excel, PowerPoint, PDF, Markdown or HTML file in My
+  Files opens it in an editor tab. Saves sync back as undoable versions; if the
+  agent changed the file meanwhile, the editor's copy is saved next to it as
+  `<name>（编辑器版本）` instead of overwriting.
+- Local-command MCP plugins are allowed, and the login shell's `PATH` is
+  picked up so `npx` and `uvx` work.
 
-# Option 2: start them separately
-cd server && cargo run          # Terminal 1: Rust server
-cd frontend && npm install && npm run dev  # Terminal 2: front-end dev server
-```
-
-### 3. Production build (single binary)
-
-```bash
-# Build the front end → build the back end (the front-end build is embedded automatically)
-npm run build
-
-# Run
-./server/target/release/walioffice
-# Open http://localhost:8000
-```
-
-### 4. Docker deployment
-
-```bash
-# Use the prebuilt image
-docker compose -f docker-compose-walioffice.yml up -d
-
-# Or build from source
-docker build -t walioffice .
-docker run -p 8000:8000 -v ./data:/app/data walioffice
-```
-
-> For a full cloud-server deployment (including Nginx + HTTPS), see [DEPLOY.md](DEPLOY.md).
-
-## 🔧 Agent tools
-
-The agent orchestrates these tools automatically through its ReAct loop; users never have to pick one:
-
-| Tool | What it does | Output |
-|------|------|----------|
-| `ppt_plan` | Plans a slide deck's outline and structure | JSON |
-| `ppt_generate` | Generates a complete deck (with visual design) | Slide preview |
-| `doc_generate` | Generates documents (reports / PRDs / plans, etc.) | Exportable `.docx` |
-| `md_generate` | Generates Markdown documents | Markdown |
-| `sheet_generate` | Generates structured tables | Exportable `.xlsx` |
-| `chart_generate` | Generates visual charts from data | Chart |
-| `drawio_generate` | Generates flowcharts / architecture diagrams | draw.io XML |
-| `image_prompt` | Writes an image prompt and calls text-to-image | Image |
-| `video_generate` | Calls a text-to-video model | MP4 |
-| `web_search` | Searches the web for current information | Search result summary |
-
-## 📡 API
-
-| Route | Method | Description |
-|------|------|------|
-| `/api/auth/login` | POST | Username + password login |
-| `/api/auth/register` | POST | Register |
-| `/api/auth/me` | GET | Current user |
-| `/api/chat/stream` | POST | Streaming agent conversation over SSE |
-| `/api/chat/sessions` | GET | Session list |
-| `/api/session/:id` | GET | Session details |
-| `/api/session/:id` | DELETE | Delete a session |
-| `/api/project/list` | GET | Project list |
-| `/api/project/:id` | GET | Project details |
-| `/api/file/upload` | POST | Upload a file |
-| `/api/file/download/:id` | GET | Download a file |
-| `/api/doc/export` | POST | Export DOCX |
-| `/api/excel/export` | POST | Export XLSX |
-| `/api/settings/models` | GET | Available models |
-| `/api/settings/model` | PUT | Switch the current model |
-| `/api/dashboard/stats` | GET | Statistics |
-| `/api/notification/list` | GET | Notifications |
-| `/api/health` | GET | Health check |
-
-## 🐳 Docker build
-
-The Dockerfile uses a three-stage build:
-
-1. **Stage 1 — front end**: `node:20-slim`, npm ci + build
-2. **Stage 2 — Rust**: `rust:1.88-bookworm`, cargo build --release (using the USTC crates mirror)
-3. **Stage 3 — runtime**: `ubuntu:22.04`, containing only the binary + ffmpeg + minimal dependencies
-
-The runtime image is based on `ubuntu:22.04` with ffmpeg installed. The walioffice binary (release build, with the front end and the DataFusion data engine embedded) is about 69 MB and ready to run. A first release build (LTO + a single codegen unit) takes about 8–9 minutes.
-
-## ⚙️ Environment variables
-
-| Variable | Required | Default | Description |
-|------|------|--------|------|
-| `AIPPT_JWT_SECRET` | ✅ | — | JWT signing key; must be changed in production |
-| `AIPPT_PORT` | ❌ | `8000` | Server port |
-| `AIPPT_HOST` | ❌ | `0.0.0.0` | Listen address |
-| `LLM_TEXT_BASE_URL` | ✅ | — | Text LLM API URL |
-| `LLM_TEXT_API_KEY` | ✅ | — | Text LLM API key |
-| `LLM_TEXT_MODELS` | ✅ | — | Available text models (comma-separated) |
-| `LLM_IMAGE_BASE_URL` | ✅ | — | Image model API URL |
-| `LLM_IMAGE_API_KEY` | ✅ | — | Image model API key |
-| `LLM_IMAGE_MODELS` | ✅ | — | Available image models |
-| `LLM_VIDEO_BASE_URL` | ✅ | — | Video model API URL |
-| `LLM_VIDEO_API_KEY` | ✅ | — | Video model API key |
-| `LLM_VIDEO_MODELS` | ✅ | — | Available video models |
-| `AIPPT_WEB_SEARCH_PROVIDER` | ❌ | `auto` | Search source: `auto` / `searxng` / `duckduckgo` |
-| `AIPPT_CORS_ORIGINS` | ❌ | — | Allowed CORS origins (comma-separated) |
-| `AIPPT_DATA_DIR` | ❌ | `data` | Data storage directory |
-
-> See [`.env.example`](.env.example) for the full configuration.
-
-## 📌 Signing in
-
-- The login page (`/login`) uses **username + password**; if you have no account you can register on the same page (username at least 3 characters, password at least 6)
-- The old verification-code login endpoint `/api/auth/verification-login` is still in the back end; set `WALIOFFICE_X_API_AUTH_LOGIN_URL` to a verification service if you need it. The login page no longer uses it
-- The admin console has been removed for now, and no default admin account is created at startup
-
-## 📄 Related documents
-
-- [Architecture](ARCHITECTURE.md) — technical layers, module responsibilities, data flow
-- [Deployment guide](DEPLOY.md) — full cloud-server deployment (Docker + Nginx + HTTPS)
-
-## 📜 License
-
-MIT
-
-## Editor suite (suite/)
-
-`suite/` is a git submodule pointing to [CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite): a desktop editor suite (Docs, Sheets, Slides, PDF, Markdown, HTML) modified from [GenOffice](https://github.com/genspark-ai/genoffice) (Mainfunc, Inc., Apache-2.0). Most of the editor code comes from GenOffice; OfficePilot's changes are listed in `suite/OFFICEPILOT_CHANGES.md`. GenOffice and Genspark are trademarks of Mainfunc, Inc.; this project is not affiliated with Mainfunc, Inc.
+Build it on macOS (Apple Silicon) with Rust, Node.js 22 and the submodule:
 
 ```bash
 git submodule update --init suite
-cd suite && npm ci && npm run native:build -w @genoffice/sheets && npm run build:all
+scripts/build-desktop.sh
+# suite/apps/shell/release/mac-arm64/OfficePilot.app
+# suite/apps/shell/release/OfficePilot-<version>-arm64.dmg
 ```
 
-The OfficePilot desktop app is the suite's shell: it opens on the editors' home screen (recent files, folder tree, tabs), and the Assistant entry in the sidebar opens OfficePilot's chat, tasks and settings in a tab. The OfficePilot service runs as the app's background process and keeps running from the tray when every window is closed.
+The build is not signed yet: the first time, right-click the app and choose
+**Open**. The earlier Tauri desktop app in `desktop/` still builds on its own
+and will be removed once the new app covers everything.
 
-In the desktop app, every Word, Excel, PowerPoint, PDF, Markdown or HTML file in My Files has an **Open in editor** button. OfficePilot copies the file to a working copy under `<data dir>/open/`, opens it in OfficePilot Suite, and syncs every save back into the workspace as an undoable operation. If the AI changes the same file while it is open in the editor, both versions are kept: the original keeps the AI's change and the editor's version is saved next to it as `<name>（编辑器版本）`.
+## Self-hosting
 
-The desktop assistant can also use the suite directly: `office_convert` (PDF → Word / Excel / PowerPoint, anything → PDF, HTML → Word), `office_merge` (fill `{{placeholders}}` in a Word / PowerPoint / Excel template), `office_check` (broken references, stale TOC, formula errors, text overflow), `office_render` (page images shown to the user), `editor_selection` (what the user has selected in the editor) and `editor_open`. Results are saved as new files in the workspace and can be undone.
-
-Settings → Integrations → Editor suite has a switch that lets the suite's own AI assistant use the model configured in OfficePilot. OfficePilot adds an "OfficePilot（同步）" endpoint to the suite's `ai-settings.json` (address and model only) and passes the API key to the suite through an environment variable when it opens the editor, so the key is never written into the suite's settings file. Turning the switch off removes the endpoint and restores the suite's previous choice.
+The server is a single Rust binary with the web UI embedded.
 
 ```bash
-scripts/build-suite.sh      # suite/apps/shell/release/mac-arm64/OfficePilot.app (editors only; also used in development)
-scripts/build-desktop.sh    # the OfficePilot desktop app: the suite shell plus the OfficePilot service, and a dmg
+cp .env.example .env            # then fill in the settings below
+npm install && npm run build    # web UI, then the server (the UI is embedded)
+./server/target/release/walioffice
+# http://localhost:8000
 ```
+
+Or with Docker:
+
+```bash
+docker compose -f docker-compose-walioffice.yml up -d
+# or: docker build -t walioffice . && docker run -p 8000:8000 -v ./data:/app/data walioffice
+```
+
+The Dockerfile builds in three stages (web UI on `node:20-slim`, the server on
+`rust:1.88-bookworm`, a runtime on `ubuntu:22.04` with ffmpeg). For a full
+server deployment with Nginx and HTTPS see [DEPLOY.md](DEPLOY.md).
+
+For development, `npm run dev` starts the web UI with hot reload on
+`http://localhost:5173` and the server on `http://localhost:8000`.
+
+### Configuration
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `AIPPT_JWT_SECRET` | ✅ | — | JWT signing key; change it in production |
+| `AIPPT_HOST` / `AIPPT_PORT` | | `0.0.0.0` / `8000` | Listen address and port |
+| `LLM_TEXT_BASE_URL` / `LLM_TEXT_API_KEY` / `LLM_TEXT_MODELS` | ✅ | — | Text model service, key and models (comma-separated) |
+| `LLM_IMAGE_BASE_URL` / `LLM_IMAGE_API_KEY` / `LLM_IMAGE_MODELS` | ✅ | — | Image model service |
+| `LLM_VIDEO_BASE_URL` / `LLM_VIDEO_API_KEY` / `LLM_VIDEO_MODELS` | ✅ | — | Video model service |
+| `AIPPT_WEB_SEARCH_PROVIDER` | | `auto` | `auto`, `searxng` or `duckduckgo` |
+| `AIPPT_CORS_ORIGINS` | | — | Allowed CORS origins |
+| `AIPPT_DATA_DIR` | | `data` | Data directory |
+| `DATABASE_URL` | | SQLite in the data directory | `sqlite://…` or `mysql://…` |
+
+Every option, including search endpoints and timeouts, is in
+[`.env.example`](.env.example). Sign in with a username and password; the login
+page also registers new accounts.
+
+## How it works
+
+```
+                 ┌───────────────────────────── Desktop app (Electron) ─────────────────────────────┐
+                 │  Home · tabs · Docs · Sheets · Slides · PDF · Markdown · HTML · AI panel         │
+                 │  Assistant tab ──────────────────┐            tray · single instance             │
+                 └──────────────────────────────────┼───────────────────────────────────────────────┘
+   Browser (web) ───────────────────────────────────┤ HTTP / SSE (127.0.0.1 on the desktop)
+                                                    ▼
+┌─────────────────────────────────── OfficePilot service (Rust, axum + tokio) ───────────────────────────────────┐
+│  Auth (JWT) · REST + SSE routes · background tasks · schedules · Feishu · MCP client · editor sync           │
+│                                                                                                               │
+│  Agent (ReAct, parallel tools) ──► Tool registry ──► create · edit · workspace · data · suite · search · plan │
+│        │                                   │                                                                  │
+│        ▼                                   ▼                                                                  │
+│  OpenAI-compatible LLMs           officepilot-engine (docx / xlsx / pptx in place) · DataFusion · SQLite      │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        ▲
+        │ the same engine, without the agent
+   officepilot CLI · MCP server  ◄── Claude Code · Codex · Cursor · Gemini CLI
+```
+
+The original file is always the source of truth. An edit reads the file into
+blocks anchored to their original XML, applies a validated batch of operations,
+splices only the changed fragments back, and repacks the archive with every
+other entry copied as it was. Workspace writes keep a snapshot and an inverse
+operation, which is what the one-click undo replays.
+
+### Project layout
+
+```
+server/      Rust service: agent, tools, routes, workspace, tasks, schedules, IM, MCP, editor sync
+frontend/    React 18 + TypeScript + Vite web UI (embedded into the server binary)
+engine/      officepilot-engine: in-place .docx / .xlsx / .pptx reading and editing
+cli/         officepilot command line, MCP server and agent skill
+suite/       editor suite and desktop shell (git submodule, adapted from GenOffice)
+skills/      built-in SKILL.md skills
+scripts/     build-suite.sh, build-desktop.sh
+desktop/     earlier Tauri desktop app (being retired)
+migrations/  SQL migrations (SQLite and MySQL)
+```
+
+| Layer | Technology |
+|---|---|
+| Service | Rust, axum, tokio, sqlx (SQLite, MySQL optional), DataFusion |
+| Web UI | React 18, TypeScript, Vite, Tailwind CSS, Zustand |
+| Office engine | Pure Rust OOXML reader and writer, byte-preserving |
+| Desktop | Electron shell and editors (TypeScript), Rust `.xlsx` sidecar |
+| Models | Any OpenAI-compatible API, streamed over SSE |
+
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md) and [DEPLOY.md](DEPLOY.md).
+
+## FAQ
+
+**Does OfficePilot send my files anywhere?**
+Files are stored, edited and converted on the machine that runs OfficePilot.
+Only the text the agent sends to your model provider leaves it, and only to the
+provider you configured.
+
+**Do I need the desktop app?**
+No. The web version has the assistant, workspace, tasks, schedules, plugins and
+Feishu. The desktop app adds the editor suite and the tools that work with it.
+
+**Can the agent delete my files?**
+No. There is no delete tool. Moves, renames, conversions and edits are recorded
+with their inverse and can be undone.
+
+**Which models work?**
+Any service with an OpenAI-compatible chat API. DeepSeek and Qwen have presets;
+everything else, local servers included, goes in the custom slot.
+
+## Acknowledgements
+
+- OfficePilot started from [fuzhengwei/WaLiOffice](https://github.com/fuzhengwei/WaLiOffice)
+  (imported at commit `50ad355`) and rebuilt its agent core, workspace, engine
+  and desktop app. The DeepSeek Harness plugin for it is at
+  [fuzhengwei/walioffice-dsh-plugin](https://github.com/fuzhengwei/walioffice-dsh-plugin).
+- The editor suite in `suite/` ([CrstalLi02/officepilot-suite](https://github.com/CrstalLi02/officepilot-suite))
+  is a modified version of [GenOffice](https://github.com/genspark-ai/genoffice)
+  by Mainfunc, Inc., licensed under Apache-2.0. Most of the editor code comes
+  from GenOffice; OfficePilot's changes are listed in
+  [`suite/OFFICEPILOT_CHANGES.md`](suite/OFFICEPILOT_CHANGES.md). The fork
+  removes the Genspark account and cloud proxy, usage analytics and the
+  upstream update feed. GenOffice and Genspark are trademarks of Mainfunc,
+  Inc.; this project is not affiliated with Mainfunc, Inc.
+
+## License
+
+OfficePilot is released under the MIT License. The editor suite in `suite/`
+keeps its Apache-2.0 license and NOTICE.
